@@ -12,6 +12,7 @@
  */
 
 import type { Patient } from "@/types";
+import { askSnowflakeQuestion } from "@/services/snowflakeMock";
 
 export interface Citation {
   /** Short label shown on the chip, e.g. "CMS SEP-1 Bundle" */
@@ -192,6 +193,29 @@ export async function generateResponse(
   _selectedPatient: Patient | null,
   _conversationHistory: ChatMessage[]
 ): Promise<ChatResponse> {
+  // ── Try Snowflake RAG first ──
+  if (_selectedPatient) {
+    try {
+      const sfResult = await askSnowflakeQuestion(
+        _selectedPatient.id,
+        message
+      );
+      if (sfResult) {
+        return {
+          content: sfResult.answer,
+          citations: sfResult.citations.map((c) => ({
+            title: c.title,
+            source: c.source,
+            url: c.url,
+          })),
+        };
+      }
+    } catch {
+      // Snowflake unavailable — fall through to mock
+    }
+  }
+
+  // ── Fallback: local mock responses ──
   // Simulate network / LLM latency
   await new Promise((resolve) => setTimeout(resolve, 600 + Math.random() * 800));
 
@@ -221,6 +245,7 @@ export async function generateResponse(
   const r = GENERAL_RESPONSES[msgCounter++ % GENERAL_RESPONSES.length];
   return { content: r.content, citations: r.citations };
 }
+
 
 /** Quick-reply suggestions to get nurses started */
 export function getSuggestions(selectedPatient: Patient | null): string[] {
