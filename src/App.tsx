@@ -2,13 +2,17 @@ import React, { useState, useMemo, useCallback, useEffect } from "react";
 import PatientTable from "@/components/PatientTable";
 import type { ColumnDef } from "@/components/PatientTable";
 import AnalystPanel from "@/components/AnalystPanel";
+import ChatPanel from "@/components/ChatPanel";
 import ColumnPicker from "@/components/ColumnPicker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { listPatients, searchPatients } from "@/services/fhirMock";
 import type { Patient } from "@/types";
+import { cn } from "@/lib/utils";
 import { Plus, Search } from "lucide-react";
+
+type RightPanelTab = "analyst" | "chat";
 
 // Default columns — matches screenshot layout
 const DEFAULT_COLUMNS: ColumnDef[] = [
@@ -40,6 +44,7 @@ export default function App() {
   const [sortKey, setSortKey] = useState("riskScore");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [queryColCount, setQueryColCount] = useState(0);
+  const [rightTab, setRightTab] = useState<RightPanelTab>("analyst");
 
   // --- Data ---
   const filteredPatients = useMemo(() => {
@@ -151,9 +156,43 @@ export default function App() {
           />
         </div>
 
-        {/* Right pane — 30% */}
-        <div className="w-[30%] border-l bg-white overflow-y-auto">
-          <AnalystPanel selectedPatient={selectedPatient} />
+        {/* Right pane — 30% with tabs */}
+        <div className="flex w-[30%] flex-col border-l bg-white">
+          {/* Tab bar */}
+          <div className="flex border-b">
+            <button
+              onClick={() => setRightTab("analyst")}
+              className={cn(
+                "flex-1 px-4 py-2.5 text-sm font-medium transition-colors",
+                rightTab === "analyst"
+                  ? "border-b-2 border-primary text-primary"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Analyst
+            </button>
+            <button
+              onClick={() => setRightTab("chat")}
+              className={cn(
+                "flex-1 px-4 py-2.5 text-sm font-medium transition-colors",
+                rightTab === "chat"
+                  ? "border-b-2 border-primary text-primary"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Chat
+            </button>
+          </div>
+          {/* Tab content */}
+          <div className="flex-1 overflow-hidden">
+            {rightTab === "analyst" ? (
+              <div className="h-full overflow-y-auto">
+                <AnalystPanel selectedPatient={selectedPatient} />
+              </div>
+            ) : (
+              <ChatPanel selectedPatient={selectedPatient} />
+            )}
+          </div>
         </div>
       </div>
     </div>
