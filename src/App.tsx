@@ -45,6 +45,7 @@ export default function App() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [queryColCount, setQueryColCount] = useState(0);
   const [rightTab, setRightTab] = useState<RightPanelTab>("analyst");
+  const [pendingChatMessage, setPendingChatMessage] = useState<string | null>(null);
 
   // --- Data ---
   const filteredPatients = useMemo(() => {
@@ -97,6 +98,18 @@ export default function App() {
 
   const handleSelectPatient = useCallback((patient: Patient) => {
     setSelectedPatient((prev) => (prev?.id === patient.id ? null : patient));
+  }, []);
+
+  // Cross-panel navigation: switch to Chat tab with a pre-filled message
+  const switchToChat = useCallback((message?: string) => {
+    if (message) setPendingChatMessage(message);
+    setRightTab("chat");
+  }, []);
+
+  // Chat can update the search query to filter the table
+  const handleSearchFromChat = useCallback((query: string) => {
+    setSearchQuery(query);
+    setRightTab("analyst");
   }, []);
 
   return (
@@ -187,10 +200,19 @@ export default function App() {
           <div className="flex-1 overflow-hidden">
             {rightTab === "analyst" ? (
               <div className="h-full overflow-y-auto">
-                <AnalystPanel selectedPatient={selectedPatient} />
+                <AnalystPanel
+                  selectedPatient={selectedPatient}
+                  searchQuery={debouncedQuery}
+                  onSwitchToChat={switchToChat}
+                />
               </div>
             ) : (
-              <ChatPanel selectedPatient={selectedPatient} />
+              <ChatPanel
+                selectedPatient={selectedPatient}
+                pendingMessage={pendingChatMessage}
+                onPendingMessageConsumed={() => setPendingChatMessage(null)}
+                onSearchUpdate={handleSearchFromChat}
+              />
             )}
           </div>
         </div>

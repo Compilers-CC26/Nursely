@@ -10,21 +10,66 @@ import {
   ClipboardList,
   Sparkles,
   User,
+  MessageSquare,
+  ArrowRight,
 } from "lucide-react";
 import type { Patient } from "@/types";
 import { generateSBAR, getAnalyticsResults } from "@/services/snowflakeMock";
 
 interface AnalystPanelProps {
   selectedPatient: Patient | null;
+  searchQuery: string;
+  onSwitchToChat: (message?: string) => void;
 }
 
-const agentActions = [
-  { icon: Activity, label: "Extract vitals trends", done: true },
-  { icon: PenLine, label: "Rewrite query", done: true },
-  { icon: ClipboardList, label: "Suggest order sets", done: true },
-];
+/** Generate a dynamic header based on current context */
+function getContextHeader(
+  searchQuery: string,
+  selectedPatient: Patient | null
+): string {
+  if (selectedPatient && searchQuery) {
+    return `Analyzing ${selectedPatient.name} — filtered by "${searchQuery}"`;
+  }
+  if (selectedPatient) {
+    return `Analyzing ${selectedPatient.name} — ${selectedPatient.diagnosis}`;
+  }
+  if (searchQuery) {
+    return `Explore patients matching "${searchQuery}"`;
+  }
+  return "Explore your patient cohort";
+}
 
-export default function AnalystPanel({ selectedPatient }: AnalystPanelProps) {
+/** Generate context-aware agent actions */
+function getAgentActions(
+  searchQuery: string,
+  selectedPatient: Patient | null
+) {
+  if (selectedPatient) {
+    return [
+      { icon: Activity, label: `Extract vitals trends for ${selectedPatient.name.split(" ")[0]}`, done: true },
+      { icon: PenLine, label: "Review medication interactions", done: true },
+      { icon: ClipboardList, label: "Generate care recommendations", done: true },
+    ];
+  }
+  if (searchQuery) {
+    return [
+      { icon: Activity, label: `Filter cohort by "${searchQuery}"`, done: true },
+      { icon: PenLine, label: "Rank by risk score", done: true },
+      { icon: ClipboardList, label: "Identify high-priority alerts", done: true },
+    ];
+  }
+  return [
+    { icon: Activity, label: "Extract vitals trends", done: true },
+    { icon: PenLine, label: "Rewrite query", done: true },
+    { icon: ClipboardList, label: "Suggest order sets", done: true },
+  ];
+}
+
+export default function AnalystPanel({
+  selectedPatient,
+  searchQuery,
+  onSwitchToChat,
+}: AnalystPanelProps) {
   const analytics = useMemo(() => getAnalyticsResults(), []);
   const [showSBAR, setShowSBAR] = useState(false);
   const [refinementQ1, setRefinementQ1] = useState("");
@@ -40,6 +85,23 @@ export default function AnalystPanel({ selectedPatient }: AnalystPanelProps) {
     setShowSBAR(false);
   }, [selectedPatient?.id]);
 
+  const contextHeader = getContextHeader(searchQuery, selectedPatient);
+  const agentActions = getAgentActions(searchQuery, selectedPatient);
+
+  // Build a refinement message for the Chat tab
+  const buildRefineMessage = () => {
+    const parts: string[] = [];
+    if (searchQuery) parts.push(`current search: "${searchQuery}"`);
+    if (refinementQ1) parts.push(`risk category: ${refinementQ1}`);
+    if (refinementQ2) parts.push(`unit: ${refinementQ2}`);
+    if (selectedPatient) parts.push(`selected patient: ${selectedPatient.name}`);
+
+    if (parts.length === 0) {
+      return "Help me refine the current patient cohort. What filters or criteria should I consider?";
+    }
+    return `Help me refine my search. Current context: ${parts.join(", ")}. What else should I look at?`;
+  };
+
   return (
     <Card className="flex h-full flex-col border-0 bg-white shadow-none">
       <CardHeader className="space-y-1 pb-4">
@@ -54,14 +116,24 @@ export default function AnalystPanel({ selectedPatient }: AnalystPanelProps) {
 
       <ScrollArea className="flex-1">
         <CardContent className="space-y-6">
-          {/* Prompt header */}
+          {/* Dynamic prompt header */}
           <div className="rounded-lg bg-gradient-to-br from-primary/5 to-primary/10 p-4">
             <p className="text-base font-semibold text-foreground leading-snug">
-              Explore patients at risk for sepsis
+              {contextHeader}
             </p>
+            {(searchQuery || selectedPatient) && (
+              <button
+                onClick={() => onSwitchToChat(`Tell me more about: ${contextHeader}`)}
+                className="mt-2 flex items-center gap-1 text-xs text-primary/70 hover:text-primary transition-colors"
+              >
+                <MessageSquare className="h-3 w-3" />
+                Ask the assistant about this
+                <ArrowRight className="h-3 w-3" />
+              </button>
+            )}
           </div>
 
-          {/* Agent actions checklist */}
+          {/* Agent actions checklist — context-aware */}
           <div className="space-y-2">
             {agentActions.map((action) => (
               <div key={action.label} className="flex items-center gap-2.5">
@@ -140,8 +212,14 @@ export default function AnalystPanel({ selectedPatient }: AnalystPanelProps) {
 
           {/* Action buttons */}
           <div className="flex gap-2">
-            <Button size="sm" variant="outline" className="flex-1">
-              Refine
+            <Button
+              size="sm"
+              variant="outline"
+              className="flex-1 gap-1.5"
+              onClick={() => onSwitchToChat(buildRefineMessage())}
+            >
+              <MessageSquare className="h-3.5 w-3.5" />
+              Refine in Chat
             </Button>
             <Button
               size="sm"
@@ -163,10 +241,23 @@ export default function AnalystPanel({ selectedPatient }: AnalystPanelProps) {
 
           {selectedPatient && showSBAR && sbar && (
             <div className="space-y-3 rounded-lg border bg-muted/20 p-4">
-              <h4 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
-                <ClipboardList className="h-4 w-4 text-primary" />
-                SBAR Report — {selectedPatient.name}
-              </h4>
+              <div className="flex items-center justify-between">
+                <h4 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                  <ClipboardList className="h-4 w-4 text-primary" />
+                  SBAR Report — {selectedPatient.name}
+                </h4>
+                <button
+                  onClick={() =>
+                    onSwitchToChat(
+                      `I just generated an SBAR for ${selectedPatient.name}. Can you help me review and improve it?`
+                    )
+                  }
+                  className="text-xs text-primary/70 hover:text-primary transition-colors flex items-center gap-1"
+                >
+                  Discuss in Chat
+                  <ArrowRight className="h-3 w-3" />
+                </button>
+              </div>
 
               <div className="space-y-2.5">
                 <SBARSection title="Situation" content={sbar.situation} />

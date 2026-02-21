@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Send, Bot, User, Loader2, Sparkles, ExternalLink, BookOpen, ChevronDown, ChevronUp } from "lucide-react";
+import { Send, Bot, User, Loader2, Sparkles, ExternalLink, BookOpen, ChevronDown, ChevronUp, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Patient } from "@/types";
 import {
@@ -12,9 +13,20 @@ import {
 
 interface ChatPanelProps {
   selectedPatient: Patient | null;
+  /** Pre-filled message sent from the Analyst panel */
+  pendingMessage?: string | null;
+  /** Called after the pending message has been consumed */
+  onPendingMessageConsumed?: () => void;
+  /** Called when the chat suggests updating the search/filter in the table */
+  onSearchUpdate?: (query: string) => void;
 }
 
-export default function ChatPanel({ selectedPatient }: ChatPanelProps) {
+export default function ChatPanel({
+  selectedPatient,
+  pendingMessage,
+  onPendingMessageConsumed,
+  onSearchUpdate,
+}: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: "welcome",
@@ -29,8 +41,11 @@ export default function ChatPanel({ selectedPatient }: ChatPanelProps) {
   ]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [showTableSearch, setShowTableSearch] = useState(false);
+  const [tableSearchInput, setTableSearchInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const lastConsumedPending = useRef<string | null>(null);
 
   const suggestions = getSuggestions(selectedPatient);
 
@@ -85,6 +100,19 @@ export default function ChatPanel({ selectedPatient }: ChatPanelProps) {
     },
     [isLoading, selectedPatient, messages]
   );
+
+  // Handle pending message from Analyst panel — guard against double-fire
+  useEffect(() => {
+    if (
+      pendingMessage &&
+      !isLoading &&
+      pendingMessage !== lastConsumedPending.current
+    ) {
+      lastConsumedPending.current = pendingMessage;
+      sendMessage(pendingMessage);
+      onPendingMessageConsumed?.();
+    }
+  }, [pendingMessage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -189,6 +217,60 @@ export default function ChatPanel({ selectedPatient }: ChatPanelProps) {
           </div>
         )}
       </div>
+
+      {/* Inline search shortcut — filters the patient table */}
+      {onSearchUpdate && (
+        <div className="border-t px-3 py-2">
+          {showTableSearch ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (tableSearchInput.trim()) {
+                  onSearchUpdate(tableSearchInput.trim());
+                  setTableSearchInput("");
+                  setShowTableSearch(false);
+                }
+              }}
+              className="flex items-center gap-2"
+            >
+              <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <Input
+                autoFocus
+                value={tableSearchInput}
+                onChange={(e) => setTableSearchInput(e.target.value)}
+                placeholder="Filter patient table..."
+                className="h-7 text-xs"
+                onBlur={() => {
+                  if (!tableSearchInput.trim()) setShowTableSearch(false);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    setShowTableSearch(false);
+                    setTableSearchInput("");
+                  }
+                }}
+              />
+              <Button
+                type="submit"
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7 shrink-0"
+                disabled={!tableSearchInput.trim()}
+              >
+                <Send className="h-3 w-3" />
+              </Button>
+            </form>
+          ) : (
+            <button
+              onClick={() => setShowTableSearch(true)}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <Search className="h-3 w-3" />
+              Search patient table from here...
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Input area */}
       <div className="border-t p-3">
