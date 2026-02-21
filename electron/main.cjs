@@ -16,7 +16,8 @@ function createWindow() {
   // In production, load the built index.html
   const isDev = !app.isPackaged;
   if (isDev) {
-    win.loadURL("http://localhost:5173");
+    const devUrl = process.env.VITE_DEV_SERVER_URL || "http://localhost:5173";
+    win.loadURL(devUrl);
   } else {
     win.loadFile(path.join(__dirname, "../dist/index.html"));
   }
