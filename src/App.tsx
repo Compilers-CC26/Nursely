@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "motion/react";
 import { LoadingAnimation } from "@/components/LoadingAnimation";
 import { OnboardingFlow } from "@/components/onboarding/OnboardingFlow";
-import { Sparkles, Search, Activity, RefreshCw } from "lucide-react";
+import { TableProperties, Search, Activity, RefreshCw } from "lucide-react";
 import nurselyLogo from "../assets/images/Nursely_Logo.svg";
 
 type RightPanelTab = "analyst" | "chat";
@@ -463,8 +463,8 @@ export default function App() {
                 className="gap-1.5"
                 onClick={() => setQueryModalOpen(true)}
               >
-                <Sparkles className="h-4 w-4" />
-                Score patients
+                <TableProperties className="h-4 w-4" />
+                Add Smart Column
               </Button>
               <ColumnPicker columns={columns} onToggle={handleToggleColumn} />
             </div>

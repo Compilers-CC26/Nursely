@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Loader2, Sparkles, X, ChevronRight } from "lucide-react";
+import { Loader2, TableProperties, X, ChevronRight } from "lucide-react";
 import type { Patient } from "@/types";
 import { runQueryColumnBatch } from "@/services/chatMock";
 
@@ -78,9 +78,9 @@ export default function QueryColumnModal({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border/60 px-5 py-4">
           <div className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-primary" />
+            <TableProperties className="h-4 w-4 text-primary" />
             <span className="text-sm font-semibold text-foreground">
-              Score patients by clinical question
+              Add a ranked column by clinical question
             </span>
           </div>
           <button
@@ -192,8 +192,8 @@ export default function QueryColumnModal({
                 </>
               ) : (
                 <>
-                  <Sparkles className="h-3.5 w-3.5" />
-                  Score Patients
+                  <TableProperties className="h-3.5 w-3.5" />
+                  Add Column
                 </>
               )}
             </Button>

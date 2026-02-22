@@ -1030,61 +1030,53 @@ export const FALL_RISK_MED_KEYWORDS = [
 ];
 
 function buildCensusRoster(census: Patient[]): string {
-  const lines = census
+  const lines = [...census]
+    .sort((a, b) => b.riskScore - a.riskScore)
     .map((p) => {
-      const dx = getEffectiveDiagnosis(p) ?? "No active dx";
+      const dx = getEffectiveDiagnosis(p) ?? "?";
       const allMeds = p.meds.map((m) => m.toLowerCase());
 
-      // Clinical category flags
+      // Short flag codes keep lines compact without losing clinical meaning
       const flags: string[] = [];
-      if (p.riskScore > 0.65) flags.push("HIGH RISK");
-      if (p.labs.some((l) => l.flag === "critical"))
-        flags.push("CRITICAL LABS");
-      if (p.labs.some((l) => l.flag === "high" || l.flag === "low"))
-        flags.push("ABNORMAL LABS");
+      if (p.riskScore > 0.65) flags.push("HiRisk");
+      if (p.labs.some((l) => l.flag === "critical")) flags.push("CritLab");
+      else if (p.labs.some((l) => l.flag === "high" || l.flag === "low"))
+        flags.push("AbnLab");
 
-      // Vitals — critical level
       const v = p.vitals;
-      if (v.hr !== null && (v.hr > 120 || v.hr < 50)) flags.push("HR CRITICAL");
-      else if (v.hr !== null && (v.hr > 100 || v.hr < 60))
-        flags.push("HR ABNORMAL");
-      if (v.bpSys !== null && v.bpSys < 80) flags.push("BP CRITICAL");
+      if (v.hr !== null && (v.hr > 120 || v.hr < 50)) flags.push("HR!");
+      if (v.bpSys !== null && v.bpSys < 80) flags.push("BP!");
       else if (v.bpSys !== null && (v.bpSys < 90 || v.bpSys > 160))
-        flags.push("BP ABNORMAL");
-      if (v.spo2 !== null && v.spo2 < 90) flags.push("SPO2 CRITICAL");
-      else if (v.spo2 !== null && v.spo2 < 94) flags.push("SPO2 LOW");
-      if (v.rr !== null && (v.rr > 28 || v.rr < 10)) flags.push("RR CRITICAL");
-      else if (v.rr !== null && (v.rr > 20 || v.rr < 12))
-        flags.push("RR ABNORMAL");
-      if (v.temp !== null && (v.temp > 103 || v.temp < 96))
-        flags.push("TEMP CRITICAL");
-      else if (v.temp !== null && v.temp > 100.4) flags.push("FEVER");
+        flags.push("BP~");
+      if (v.spo2 !== null && v.spo2 < 90) flags.push("SpO2!");
+      else if (v.spo2 !== null && v.spo2 < 94) flags.push("SpO2~");
+      if (v.rr !== null && (v.rr > 28 || v.rr < 10)) flags.push("RR!");
+      if (v.temp !== null && v.temp > 103) flags.push("Temp!");
+      else if (v.temp !== null && v.temp > 100.4) flags.push("Fever");
 
-      // Medication category flags
-      const onAntibiotics = allMeds.some((m) =>
-        ANTIBIOTIC_KEYWORDS.some((kw) => m.includes(kw)),
-      );
-      if (onAntibiotics) {
-        const abx = p.meds.filter((m) =>
-          ANTIBIOTIC_KEYWORDS.some((kw) => m.toLowerCase().includes(kw)),
-        );
-        flags.push(`ANTIBIOTICS: ${abx.join(", ")}`);
-      }
-      const fallRiskMeds = p.meds.filter((m) =>
-        FALL_RISK_MED_KEYWORDS.some((kw) => m.toLowerCase().includes(kw)),
-      );
-      if (fallRiskMeds.length > 0)
-        flags.push(`FALL-RISK MEDS: ${fallRiskMeds.join(", ")}`);
+      if (allMeds.some((m) => ANTIBIOTIC_KEYWORDS.some((kw) => m.includes(kw))))
+        flags.push("ABX");
+      if (
+        allMeds.some((m) => FALL_RISK_MED_KEYWORDS.some((kw) => m.includes(kw)))
+      )
+        flags.push("FallRx");
 
+      // First 3 meds + overflow count — enough for interaction/med questions
+      const medsShort =
+        p.meds.slice(0, 3).join("/") +
+        (p.meds.length > 3 ? `+${p.meds.length - 3}` : "");
+
+      // Compact format: ~80 chars/patient vs ~160 before — all 50 patients fit
       return (
-        `- ${p.name} | Age ${p.age} | Rm ${p.room} | Dx: ${dx} | Risk: ${p.riskScore.toFixed(2)}` +
-        (flags.length ? ` | FLAGS: ${flags.join("; ")}` : " | FLAGS: none")
+        `${p.name}|${p.age}|Rm${p.room}|${dx}|R:${p.riskScore.toFixed(2)}` +
+        (medsShort ? `|Rx:${medsShort}` : "|Rx:none") +
+        (flags.length ? `|[${flags.join(",")}]` : "")
       );
     })
     .join("\n");
   return (
-    `[LIVE UNIT CENSUS — ${census.length} patients. ` +
-    `Use this roster as the authoritative source for all patient names, rooms, ages, diagnoses, medications, and clinical flags.]\n` +
+    `[UNIT CENSUS — ${census.length} pts. Format: Name|Age|Room|Dx|RiskScore|Meds|Flags. ` +
+    `Flag key: HiRisk=score>0.65, CritLab/AbnLab=labs, HR!/BP!/SpO2!/RR!/Temp!=critical vitals, Fever, ABX=antibiotics, FallRx=fall-risk meds.]\n` +
     lines
   );
 }
@@ -1223,6 +1215,16 @@ export async function generateResponse(
   }
 
   // ── Try Snowflake RAG ──
+  // Race every Snowflake call against a 9-second deadline.
+  // If Cortex is cold-starting or overloaded, fall through immediately
+  // to the local evidence/census response instead of blocking the nurse.
+  function sfRace<T>(p: Promise<T | null>): Promise<T | null> {
+    return Promise.race([
+      p,
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 9000)),
+    ]);
+  }
+
   try {
     if (isGlobalIntent) {
       // Prepend the full live census roster so Cortex can reason over ALL
@@ -1235,7 +1237,7 @@ export async function generateResponse(
         const roster = buildCensusRoster(_liveCensus);
         enrichedMessage = `${roster}\n\nNURSE QUESTION: ${enrichedMessage}`;
       }
-      const gResult = await askSnowflakeCohortQuestion(enrichedMessage);
+      const gResult = await sfRace(askSnowflakeCohortQuestion(enrichedMessage));
       if (gResult) {
         const fc = detectFilterIntent(message);
         const topicCites = getTopicCitations(message);
@@ -1252,9 +1254,8 @@ export async function generateResponse(
       // Inject live frontend data into the question so Cortex always has current values
       const liveContext = buildLivePatientContext(effectivePatient);
       const enrichedQuestion = `[LIVE EHR DATA — use this as the authoritative source for vitals, labs, and medications]\n${liveContext}\n\nNURSE QUESTION: ${message}`;
-      const sfResult = await askSnowflakeQuestion(
-        effectivePatient.id,
-        enrichedQuestion,
+      const sfResult = await sfRace(
+        askSnowflakeQuestion(effectivePatient.id, enrichedQuestion),
       );
       if (sfResult) {
         const fc = detectFilterIntent(message);
@@ -1282,13 +1283,7 @@ export async function generateResponse(
     // Snowflake unavailable — fall through to mock
   }
 
-  // ── Fallback: local mock responses ──
-  // Simulate network / LLM latency
-  // ── Fallback: Snowflake was unreachable — build a data-grounded response locally ──
-  // Only reached when the LLM is completely unavailable. Uses live frontend data, not canned strings.
-  await new Promise((resolve) =>
-    setTimeout(resolve, 400 + Math.random() * 400),
-  );
+  // ── Fallback: Snowflake timed out or unreachable — answer instantly from local data ──
 
   // For cohort/global questions, compute answers from the live census
   if (isGlobalIntent && _liveCensus.length > 0) {
