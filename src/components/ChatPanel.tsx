@@ -12,6 +12,8 @@ import {
   ChevronDown,
   ChevronUp,
   Search,
+  Filter,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Patient } from "@/types";
@@ -20,6 +22,7 @@ import {
   getSuggestions,
   type ChatMessage,
   type Citation,
+  type FilterCommand,
 } from "@/services/chatMock";
 
 interface ChatPanelProps {
@@ -31,6 +34,10 @@ interface ChatPanelProps {
   onPendingMessageConsumed?: () => void;
   /** Called when the chat suggests updating the search/filter in the table */
   onSearchUpdate?: (query: string) => void;
+  /** Current active filter applied to the patient table */
+  activeFilter?: FilterCommand | null;
+  /** Called when the chat response contains a filter command */
+  onApplyFilter?: (filter: FilterCommand | null) => void;
 }
 
 export default function ChatPanel({
@@ -39,6 +46,8 @@ export default function ChatPanel({
   pendingMessage,
   onPendingMessageConsumed,
   onSearchUpdate,
+  activeFilter,
+  onApplyFilter,
 }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -105,6 +114,11 @@ export default function ChatPanel({
           timestamp: new Date(),
         };
         setMessages((prev) => [...prev, assistantMsg]);
+
+        // Apply any filter command the LLM detected in the user's message
+        if (response.filterCommand) {
+          onApplyFilter?.(response.filterCommand);
+        }
       } catch (err) {
         console.error("Chat error:", err);
         const errorMsg: ChatMessage = {
@@ -144,7 +158,7 @@ export default function ChatPanel({
   };
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col">
       {/* ── Header ── */}
       <div className="border-b border-border/50 px-5 pt-5 pb-4">
         <div className="flex items-center justify-between">
@@ -165,7 +179,7 @@ export default function ChatPanel({
       {/* ── Messages ── */}
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-5"
+        className="min-h-0 flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-5"
       >
         {messages.map((msg) => (
           <div key={msg.id} className="flex flex-col gap-1.5">
@@ -239,6 +253,23 @@ export default function ChatPanel({
         )}
       </div>
 
+      {/* ── Active filter indicator ── */}
+      {activeFilter && activeFilter.type !== "clear" && (
+        <div className="flex items-center gap-2 border-t border-border/50 bg-primary/5 px-4 py-2">
+          <Filter className="h-3 w-3 shrink-0 text-primary" />
+          <span className="flex-1 text-[11px] font-medium text-primary truncate">
+            Table showing: {activeFilter.label}
+          </span>
+          <button
+            onClick={() => onApplyFilter?.(null)}
+            className="rounded p-0.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
+            title="Clear filter"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      )}
+
       {/* ── Table search shortcut ── */}
       {onSearchUpdate && (
         <div className="border-t border-border/50 px-4 py-2">
@@ -294,17 +325,17 @@ export default function ChatPanel({
       )}
 
       {/* ── Input area ── */}
-      <div className="border-t border-border/50 px-5 pb-5 pt-3">
+      <div className="shrink-0 border-t border-border/50 px-5 pb-5 pt-3">
         <div className="flex items-end gap-2 rounded-xl border bg-background p-1.5 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1">
           <textarea
             ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask about protocols, medications, patients..."
+            placeholder="Ask anything..."
             rows={1}
             className="flex-1 resize-none bg-transparent px-2 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none"
-            style={{ maxHeight: "80px" }}
+            style={{ minHeight: "36px", maxHeight: "80px" }}
           />
           <Button
             size="icon"

@@ -331,9 +331,19 @@ function matchTopic(message: string): string | null {
 
 let msgCounter = 0;
 
+export interface FilterCommand {
+  type: "search" | "risk" | "flag" | "clear";
+  text?: string;
+  riskMin?: number;
+  riskMax?: number;
+  flag?: "antibiotics" | "fall-risk" | "critical-labs" | "high-risk";
+  label: string;
+}
+
 export interface ChatResponse {
   content: string;
   citations: Citation[];
+  filterCommand?: FilterCommand;
 }
 
 /**
@@ -394,7 +404,7 @@ function detectNamedPatient(
  * Gives the LLM individual patient context for population-level questions.
  */
 // Known antibiotic keywords (lowercase substring match)
-const ANTIBIOTIC_KEYWORDS = [
+export const ANTIBIOTIC_KEYWORDS = [
   "vancomycin",
   "ceftriaxone",
   "cefazolin",
@@ -417,7 +427,7 @@ const ANTIBIOTIC_KEYWORDS = [
 ];
 
 // Meds associated with elevated fall risk
-const FALL_RISK_MED_KEYWORDS = [
+export const FALL_RISK_MED_KEYWORDS = [
   // Opioids
   "morphine",
   "oxycodone",
@@ -617,7 +627,10 @@ export async function generateResponse(
         enrichedMessage = `${roster}\n\nNURSE QUESTION: ${enrichedMessage}`;
       }
       const gResult = await askSnowflakeCohortQuestion(enrichedMessage);
-      if (gResult) return gResult;
+      if (gResult) {
+        const fc = detectFilterIntent(message);
+        return fc ? { ...gResult, filterCommand: fc } : gResult;
+      }
     } else if (effectivePatient) {
       // Inject live frontend data into the question so Cortex always has current values
       const liveContext = buildLivePatientContext(effectivePatient);
@@ -627,6 +640,7 @@ export async function generateResponse(
         enrichedQuestion,
       );
       if (sfResult) {
+        const fc = detectFilterIntent(message);
         return {
           content: sfResult.answer,
           citations: sfResult.citations.map((c) => ({
@@ -634,6 +648,7 @@ export async function generateResponse(
             source: c.source,
             url: c.url,
           })),
+          ...(fc ? { filterCommand: fc } : {}),
         };
       }
     }
@@ -865,6 +880,146 @@ function generateDynamicResponse(
   }
 
   return GENERAL_RESPONSES[0];
+}
+
+/**
+ * Detect explicit filter intent in a chat message.
+ * ONLY fires when the user uses clear filter-command language
+ * ("show me only …", "filter to …", "narrow to …").
+ * Returns null for plain questions about topics.
+ */
+export function detectFilterIntent(message: string): FilterCommand | null {
+  const lower = message.toLowerCase();
+
+  // Clear / reset intent
+  if (
+    /\b(clear|remove|reset)\b.*\b(filter|search)\b/i.test(lower) ||
+    /\bshow\s+all\s+patients\b/i.test(lower)
+  ) {
+    return { type: "clear", label: "All patients" };
+  }
+
+  // Must contain an explicit filter/show/narrow verb + scope word
+  const hasFilterVerb =
+    /\b(show|filter|narrow|display|limit|focus)\b/.test(lower) &&
+    /\b(only|just|to|me|down)\b/.test(lower);
+  if (!hasFilterVerb) return null;
+
+  // Risk tier
+  if (/high[- ]?risk|risk.*high/i.test(lower))
+    return { type: "risk", riskMin: 0.65, label: "High risk (score > 0.65)" };
+  if (/low[- ]?risk|risk.*low/i.test(lower))
+    return { type: "risk", riskMax: 0.4, label: "Low risk (score < 0.40)" };
+  if (/mod(?:erate)?[- ]?risk|medium[- ]?risk/i.test(lower))
+    return {
+      type: "risk",
+      riskMin: 0.4,
+      riskMax: 0.65,
+      label: "Moderate risk (0.40 – 0.65)",
+    };
+
+  // Clinical flags
+  if (/antibiotic/i.test(lower))
+    return { type: "flag", flag: "antibiotics", label: "On antibiotics" };
+  if (/fall[- ]?risk|at.?risk.?fall/i.test(lower))
+    return { type: "flag", flag: "fall-risk", label: "Fall-risk medications" };
+  if (/critical[- ]?lab|lab.*critical/i.test(lower))
+    return { type: "flag", flag: "critical-labs", label: "Critical labs" };
+
+  // Diagnosis / free-text search — extract the key term
+  const dxMatch = lower.match(
+    /(?:show|filter|narrow).*?(?:with|for|diagnos\w*|having)\s+([a-z][a-z\s-]{2,30?})(?:\s+patients?|\s*$)/,
+  );
+  if (dxMatch) {
+    const term = dxMatch[1].trim();
+    if (term.length > 2)
+      return { type: "search", text: term, label: `"${term}"` };
+  }
+
+  return null;
+}
+
+/**
+ * Score every patient in the census against a free-text clinical question
+ * using Snowflake Cortex. Returns a name→label map (YES / POSSIBLE / NO / N/A)
+ * or an error string when Snowflake is unavailable.
+ */
+export async function runQueryColumnBatch(
+  question: string,
+  census: Patient[],
+): Promise<{ results: Map<string, string>; error?: string }> {
+  if (!census.length)
+    return { results: new Map(), error: "No patients in census" };
+
+  // Build a condensed roster: just enough for LLM scoring
+  const rosterLines = census.map((p) => {
+    const dx = getEffectiveDiagnosis(p) ?? "No active dx";
+    const flags: string[] = [];
+    if (p.riskScore > 0.65) flags.push("HIGH RISK");
+    if (p.labs.some((l) => l.flag === "critical")) flags.push("CRITICAL LABS");
+    if (p.labs.some((l) => l.flag === "high" || l.flag === "low"))
+      flags.push("ABNORMAL LABS");
+    const v = p.vitals;
+    if (v.hr != null && (v.hr > 120 || v.hr < 50)) flags.push("HR CRITICAL");
+    if (v.bpSys != null && v.bpSys < 90) flags.push("BP LOW");
+    if (v.spo2 != null && v.spo2 < 94) flags.push("SPO2 LOW");
+    if (v.temp != null && v.temp > 100.4) flags.push("FEVER");
+    const allMeds = p.meds.map((m) => m.toLowerCase());
+    if (allMeds.some((m) => ANTIBIOTIC_KEYWORDS.some((kw) => m.includes(kw))))
+      flags.push("ON ANTIBIOTICS");
+    if (
+      allMeds.some((m) => FALL_RISK_MED_KEYWORDS.some((kw) => m.includes(kw)))
+    )
+      flags.push("FALL-RISK MEDS");
+    return `- ${p.name} | Age ${p.age} | Dx: ${dx} | Risk: ${p.riskScore.toFixed(2)}${
+      flags.length ? " | " + flags.join("; ") : ""
+    }`;
+  });
+
+  const prompt =
+    `You are scoring inpatients for a clinical triage column.\n` +
+    `INSTRUCTIONS:\n` +
+    `• For each patient below, answer the clinical question with exactly one label: YES, POSSIBLE, NO, or N/A\n` +
+    `• YES = question clearly applies | POSSIBLE = partial evidence | NO = clearly does not apply | N/A = insufficient data\n` +
+    `• Return ONLY valid JSON — no markdown fences, no explanation, no other text\n\n` +
+    `CLINICAL QUESTION: ${question}\n\n` +
+    `PATIENTS:\n${rosterLines.join("\n")}\n\n` +
+    `Return this exact structure (use the patient\'s full name as the key):\n` +
+    `{"Patient Full Name": "YES", "Other Patient": "NO", ...}\n\nJSON:`;
+
+  const result = await askSnowflakeCohortQuestion(prompt);
+  if (!result)
+    return {
+      results: new Map(),
+      error:
+        "Snowflake unavailable — connect to Snowflake to use this feature.",
+    };
+
+  // Extract JSON — handles both raw and markdown-fenced responses
+  const raw = result.content;
+  const jsonMatch =
+    raw.match(/```(?:json)?\s*([\s\S]*?)```/) || raw.match(/(\{[\s\S]*\})/);
+  if (!jsonMatch)
+    return {
+      results: new Map(),
+      error: "Could not parse LLM response as JSON.",
+    };
+
+  try {
+    const parsed: Record<string, string> = JSON.parse(
+      jsonMatch[1] ?? jsonMatch[0],
+    );
+    const map = new Map<string, string>();
+    for (const [name, label] of Object.entries(parsed)) {
+      map.set(name.trim(), String(label).trim().toUpperCase());
+    }
+    return { results: map };
+  } catch {
+    return {
+      results: new Map(),
+      error: "JSON parse error — try rephrasing the question.",
+    };
+  }
 }
 
 /** Quick-reply suggestions to get nurses started */

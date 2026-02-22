@@ -5,15 +5,21 @@ import PatientDetailCard from "@/components/PatientDetailCard";
 import AnalystPanel from "@/components/AnalystPanel";
 import ChatPanel from "@/components/ChatPanel";
 import ColumnPicker from "@/components/ColumnPicker";
+import QueryColumnModal from "@/components/QueryColumnModal";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { listPatients, searchPatients } from "@/services/fhirMock";
 import type { Patient } from "@/types";
+import type { FilterCommand } from "@/services/chatMock";
+import {
+  ANTIBIOTIC_KEYWORDS,
+  FALL_RISK_MED_KEYWORDS,
+} from "@/services/chatMock";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "motion/react";
 import { LoadingAnimation } from "@/components/LoadingAnimation";
-import { Plus, Search, Activity, RefreshCw } from "lucide-react";
+import { Sparkles, Search, Activity, RefreshCw } from "lucide-react";
 import nurselyLogo from "../assets/images/Nursely_Logo.svg";
 
 type RightPanelTab = "analyst" | "chat";
@@ -88,7 +94,8 @@ export default function App() {
   const [columns, setColumns] = useState<ColumnDef[]>(DEFAULT_COLUMNS);
   const [sortKey, setSortKey] = useState("riskScore");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
-  const [queryColCount, setQueryColCount] = useState(0);
+  const [queryModalOpen, setQueryModalOpen] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<FilterCommand | null>(null);
   const [rightTab, setRightTab] = useState<RightPanelTab>("analyst");
   const [showSplash, setShowSplash] = useState(true);
   const [pendingChatMessage, setPendingChatMessage] = useState<string | null>(
@@ -200,6 +207,50 @@ export default function App() {
           p.notes.some((n) => n.toLowerCase().includes(q)),
       );
     }
+    // Chat-driven filter applied on top of text search
+    if (activeFilter) {
+      switch (activeFilter.type) {
+        case "risk":
+          base = base.filter(
+            (p) =>
+              (activeFilter.riskMin == null ||
+                p.riskScore >= activeFilter.riskMin) &&
+              (activeFilter.riskMax == null ||
+                p.riskScore <= activeFilter.riskMax),
+          );
+          break;
+        case "flag":
+          base = base.filter((p) => {
+            const meds = p.meds.map((m) => m.toLowerCase());
+            if (activeFilter.flag === "antibiotics")
+              return meds.some((m) =>
+                ANTIBIOTIC_KEYWORDS.some((kw) => m.includes(kw)),
+              );
+            if (activeFilter.flag === "fall-risk")
+              return meds.some((m) =>
+                FALL_RISK_MED_KEYWORDS.some((kw) => m.includes(kw)),
+              );
+            if (activeFilter.flag === "critical-labs")
+              return p.labs.some((l) => l.flag === "critical");
+            if (activeFilter.flag === "high-risk") return p.riskScore > 0.65;
+            return true;
+          });
+          break;
+        case "search":
+          if (activeFilter.text) {
+            const q = activeFilter.text.toLowerCase();
+            base = base.filter(
+              (p) =>
+                p.name.toLowerCase().includes(q) ||
+                p.diagnosis.toLowerCase().includes(q) ||
+                p.summary.toLowerCase().includes(q) ||
+                p.meds.some((m) => m.toLowerCase().includes(q)),
+            );
+          }
+          break;
+        // 'clear' type: no filtering, just reset (handled by setActiveFilter(null))
+      }
+    }
     return [...base].sort((a, b) => {
       const aVal = (a as any)[sortKey];
       const bVal = (b as any)[sortKey];
@@ -212,7 +263,7 @@ export default function App() {
       }
       return sortDir === "asc" ? aVal - bVal : bVal - aVal;
     });
-  }, [liveCensus, debouncedQuery, sortKey, sortDir]);
+  }, [liveCensus, debouncedQuery, sortKey, sortDir, activeFilter]);
 
   // --- Handlers ---
   const handleSort = useCallback(
@@ -233,19 +284,50 @@ export default function App() {
     );
   }, []);
 
-  const handleAddQueryColumn = useCallback(() => {
-    const n = queryColCount + 1;
-    setQueryColCount(n);
-    const newCol: ColumnDef = {
-      key: `query_${n}`,
-      label: `Query ${n + 1} Score`,
-      visible: true,
-      width: "w-[120px]",
-      render: (p: Patient) =>
-        (p.riskScore * (0.85 + Math.random() * 0.1)).toFixed(3),
-    };
-    setColumns((cols) => [...cols, newCol]);
-  }, [queryColCount]);
+  const handleQueryColumnReady = useCallback(
+    (label: string, results: Map<string, string>) => {
+      const id = `query_${Date.now()}`;
+      const LABEL_COLORS: Record<string, string> = {
+        YES: "bg-red-50 text-red-700 border-red-200",
+        POSSIBLE: "bg-amber-50 text-amber-700 border-amber-200",
+        NO: "bg-emerald-50 text-emerald-700 border-emerald-200",
+        HIGH: "bg-red-50 text-red-700 border-red-200",
+        MEDIUM: "bg-amber-50 text-amber-700 border-amber-200",
+        LOW: "bg-emerald-50 text-emerald-700 border-emerald-200",
+      };
+      const newCol: ColumnDef = {
+        key: id,
+        label,
+        visible: true,
+        width: "w-[90px]",
+        render: (p: Patient) => {
+          const rawLabel = results.get(p.name);
+          if (!rawLabel)
+            return <span className="text-muted-foreground/40 text-xs">—</span>;
+          const upper = rawLabel.toUpperCase();
+          const cls =
+            LABEL_COLORS[upper] ??
+            "bg-muted/30 text-muted-foreground border-border/50";
+          return (
+            <span
+              className={cn(
+                "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase",
+                cls,
+              )}
+            >
+              {rawLabel}
+            </span>
+          );
+        },
+      };
+      setColumns((cols) => [...cols, newCol]);
+    },
+    [],
+  );
+
+  const handleApplyFilter = useCallback((filter: FilterCommand | null) => {
+    setActiveFilter(filter?.type === "clear" ? null : filter);
+  }, []);
 
   const handleSelectPatient = useCallback((patient: Patient) => {
     setSelectedPatient(patient);
@@ -307,7 +389,11 @@ export default function App() {
   return (
     <AnimatePresence mode="wait">
       {showSplash ? (
-        <motion.div key="splash" exit={{ opacity: 0 }} transition={{ duration: 0.4 }}>
+        <motion.div
+          key="splash"
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.4 }}
+        >
           <LoadingAnimation onComplete={() => setShowSplash(false)} />
         </motion.div>
       ) : (
@@ -318,158 +404,170 @@ export default function App() {
           transition={{ duration: 0.6, ease: "easeOut" }}
           className="flex h-screen flex-col bg-muted/30"
         >
-      {/* ═══ Header bar ═══ */}
-      <header className="flex items-center justify-between border-b bg-white px-5 py-2.5">
-        <div className="flex items-center gap-3">
-          <img src={nurselyLogo} alt="Nursely" className="h-9" />
-          {censusStatus === "loading" ? (
-            <Badge
-              variant="outline"
-              className="text-xs text-muted-foreground animate-pulse"
-            >
-              <RefreshCw className="mr-1 h-3 w-3 animate-spin inline" />
-              Loading FHIR Census...
-            </Badge>
-          ) : (
-            <Badge variant="success" className="text-xs">
-              Live Census
-            </Badge>
-          )}
-
-          {preseedStatus === "syncing" && (
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-100 text-[10px] font-medium text-amber-700 animate-pulse">
-              <RefreshCw className="h-2.5 w-2.5 animate-spin" />
-              Pre-seeding Snowflake ({preseedProgress.synced}/
-              {preseedProgress.total})
-            </div>
-          )}
-          {preseedStatus === "done" && (
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-100 text-[10px] font-medium text-emerald-700">
-              <Activity className="h-2.5 w-2.5" />
-              Snowflake DB hydrated
-            </div>
-          )}
-          <span className="text-sm text-muted-foreground">
-            {filteredPatients.length.toLocaleString()} results
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5"
-            onClick={handleAddQueryColumn}
-          >
-            <Plus className="h-4 w-4" />
-            Add query column
-          </Button>
-          <ColumnPicker columns={columns} onToggle={handleToggleColumn} />
-        </div>
-      </header>
-
-      {/* ═══ Main content: table + analyst panel ═══ */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left pane */}
-        <div className="flex-1 min-w-0 p-4">
-          <div className="relative h-full rounded-2xl border border-border/50 bg-card shadow-lg overflow-hidden">
-            {/* Layer 1 — Table view */}
-            <div
-              className={cn(
-                "crossfade-layer flex flex-col gap-3 p-4",
-                detailPatient && "hidden-layer",
+          {/* ═══ Header bar ═══ */}
+          <header className="flex items-center justify-between border-b bg-white px-5 py-2.5">
+            <div className="flex items-center gap-3">
+              <img src={nurselyLogo} alt="Nursely" className="h-9" />
+              {censusStatus === "loading" ? (
+                <Badge
+                  variant="outline"
+                  className="text-xs text-muted-foreground animate-pulse"
+                >
+                  <RefreshCw className="mr-1 h-3 w-3 animate-spin inline" />
+                  Loading FHIR Census...
+                </Badge>
+              ) : (
+                <Badge variant="success" className="text-xs">
+                  Live Census
+                </Badge>
               )}
-            >
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Search patients by name, diagnosis, MRN, or notes..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-              <PatientTable
-                patients={filteredPatients}
-                columns={columns}
-                selectedId={selectedPatient?.id ?? null}
-                onSelect={handleSelectPatient}
-                sortKey={sortKey}
-                sortDir={sortDir}
-                onSort={handleSort}
-              />
+
+              {preseedStatus === "syncing" && (
+                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-100 text-[10px] font-medium text-amber-700 animate-pulse">
+                  <RefreshCw className="h-2.5 w-2.5 animate-spin" />
+                  Pre-seeding Snowflake ({preseedProgress.synced}/
+                  {preseedProgress.total})
+                </div>
+              )}
+              {preseedStatus === "done" && (
+                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-100 text-[10px] font-medium text-emerald-700">
+                  <Activity className="h-2.5 w-2.5" />
+                  Snowflake DB hydrated
+                </div>
+              )}
+              <span className="text-sm text-muted-foreground">
+                {filteredPatients.length.toLocaleString()} results
+              </span>
             </div>
 
-            {/* Layer 2 — Patient detail card */}
-            <div
-              className={cn(
-                "crossfade-layer",
-                !detailPatient && "hidden-layer",
-              )}
-            >
-              {detailPatient && (
-                <PatientDetailCard
-                  patient={detailPatient}
-                  onBack={handleBackToTable}
-                />
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Right pane */}
-        <div className="w-[360px] shrink-0 p-4">
-          <div className="flex h-full flex-col rounded-2xl border border-border/50 bg-card shadow-lg">
-            {/* Tab bar */}
-            <div className="flex border-b border-border/50 rounded-t-2xl overflow-hidden">
-              <button
-                onClick={() => setRightTab("analyst")}
-                className={cn(
-                  "flex-1 px-4 py-2.5 text-sm font-medium transition-colors",
-                  rightTab === "analyst"
-                    ? "border-b-2 border-primary text-primary"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setQueryModalOpen(true)}
               >
-                Analyst
-              </button>
-              <button
-                onClick={() => setRightTab("chat")}
-                className={cn(
-                  "flex-1 px-4 py-2.5 text-sm font-medium transition-colors",
-                  rightTab === "chat"
-                    ? "border-b-2 border-primary text-primary"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                Chat
-              </button>
+                <Sparkles className="h-4 w-4" />
+                Score patients
+              </Button>
+              <ColumnPicker columns={columns} onToggle={handleToggleColumn} />
             </div>
-            {/* Tab content */}
-            <div className="flex-1 overflow-hidden">
-              {rightTab === "analyst" ? (
-                <div className="h-full overflow-y-auto">
-                  <AnalystPanel
-                    selectedPatient={selectedPatient}
-                    searchQuery={debouncedQuery}
-                    onSwitchToChat={switchToChat}
-                    liveCensus={liveCensus}
-                    onSyncComplete={refreshPatient}
+          </header>
+
+          {/* Query column modal */}
+          <QueryColumnModal
+            open={queryModalOpen}
+            onClose={() => setQueryModalOpen(false)}
+            liveCensus={liveCensus}
+            onColumnReady={handleQueryColumnReady}
+          />
+
+          {/* ═══ Main content: table + analyst panel ═══ */}
+          <div className="flex flex-1 overflow-hidden">
+            {/* Left pane */}
+            <div className="flex-1 min-w-0 p-4">
+              <div className="relative h-full rounded-2xl border border-border/50 bg-card shadow-lg overflow-hidden">
+                {/* Layer 1 — Table view */}
+                <div
+                  className={cn(
+                    "crossfade-layer flex flex-col gap-3 p-4",
+                    detailPatient && "hidden-layer",
+                  )}
+                >
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      placeholder="Search patients by name, diagnosis, MRN, or notes..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-9"
+                    />
+                  </div>
+                  <PatientTable
+                    patients={filteredPatients}
+                    columns={columns}
+                    selectedId={selectedPatient?.id ?? null}
+                    onSelect={handleSelectPatient}
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={handleSort}
                   />
                 </div>
-              ) : (
-                <ChatPanel
-                  selectedPatient={selectedPatient}
-                  liveCensus={liveCensus}
-                  pendingMessage={pendingChatMessage}
-                  onPendingMessageConsumed={() => setPendingChatMessage(null)}
-                  onSearchUpdate={handleSearchFromChat}
-                />
-              )}
+
+                {/* Layer 2 — Patient detail card */}
+                <div
+                  className={cn(
+                    "crossfade-layer",
+                    !detailPatient && "hidden-layer",
+                  )}
+                >
+                  {detailPatient && (
+                    <PatientDetailCard
+                      patient={detailPatient}
+                      onBack={handleBackToTable}
+                    />
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Right pane */}
+            <div className="w-[360px] shrink-0 p-4">
+              <div className="flex h-full flex-col rounded-2xl border border-border/50 bg-card shadow-lg">
+                {/* Tab bar */}
+                <div className="flex border-b border-border/50 rounded-t-2xl overflow-hidden">
+                  <button
+                    onClick={() => setRightTab("analyst")}
+                    className={cn(
+                      "flex-1 px-4 py-2.5 text-sm font-medium transition-colors",
+                      rightTab === "analyst"
+                        ? "border-b-2 border-primary text-primary"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    Analyst
+                  </button>
+                  <button
+                    onClick={() => setRightTab("chat")}
+                    className={cn(
+                      "flex-1 px-4 py-2.5 text-sm font-medium transition-colors",
+                      rightTab === "chat"
+                        ? "border-b-2 border-primary text-primary"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    Chat
+                  </button>
+                </div>
+                {/* Tab content */}
+                <div className="flex-1 overflow-hidden">
+                  {rightTab === "analyst" ? (
+                    <div className="h-full overflow-y-auto">
+                      <AnalystPanel
+                        selectedPatient={selectedPatient}
+                        searchQuery={debouncedQuery}
+                        onSwitchToChat={switchToChat}
+                        liveCensus={liveCensus}
+                        onSyncComplete={refreshPatient}
+                      />
+                    </div>
+                  ) : (
+                    <ChatPanel
+                      selectedPatient={selectedPatient}
+                      liveCensus={liveCensus}
+                      pendingMessage={pendingChatMessage}
+                      onPendingMessageConsumed={() =>
+                        setPendingChatMessage(null)
+                      }
+                      onSearchUpdate={handleSearchFromChat}
+                      activeFilter={activeFilter}
+                      onApplyFilter={handleApplyFilter}
+                    />
+                  )}
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
         </motion.div>
       )}
     </AnimatePresence>
