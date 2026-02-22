@@ -11,6 +11,8 @@ import { Input } from "@/components/ui/input";
 import { listPatients, searchPatients } from "@/services/fhirMock";
 import type { Patient } from "@/types";
 import { cn } from "@/lib/utils";
+import { motion, AnimatePresence } from "motion/react";
+import { LoadingAnimation } from "@/components/LoadingAnimation";
 import { Plus, Search, Activity, RefreshCw } from "lucide-react";
 import nurselyLogo from "../assets/images/Nursely_Logo.svg";
 
@@ -88,6 +90,7 @@ export default function App() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [queryColCount, setQueryColCount] = useState(0);
   const [rightTab, setRightTab] = useState<RightPanelTab>("analyst");
+  const [showSplash, setShowSplash] = useState(true);
   const [pendingChatMessage, setPendingChatMessage] = useState<string | null>(
     null,
   );
@@ -302,7 +305,19 @@ export default function App() {
   );
 
   return (
-    <div className="flex h-screen flex-col bg-muted/30">
+    <AnimatePresence mode="wait">
+      {showSplash ? (
+        <motion.div key="splash" exit={{ opacity: 0 }} transition={{ duration: 0.4 }}>
+          <LoadingAnimation onComplete={() => setShowSplash(false)} />
+        </motion.div>
+      ) : (
+        <motion.div
+          key="app"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.6, ease: "easeOut" }}
+          className="flex h-screen flex-col bg-muted/30"
+        >
       {/* ═══ Header bar ═══ */}
       <header className="flex items-center justify-between border-b bg-white px-5 py-2.5">
         <div className="flex items-center gap-3">
@@ -455,6 +470,8 @@ export default function App() {
           </div>
         </div>
       </div>
-    </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
