@@ -234,7 +234,7 @@ async function askSnowflakeCohortQuestion(
       question,
     );
     if (result.success)
-      return { content: result.answer, citations: result.citations || [] };
+      return { content: result.answer ?? "", citations: result.citations || [] };
     return {
       error: result.error ?? "Snowflake returned an unsuccessful response",
     };
