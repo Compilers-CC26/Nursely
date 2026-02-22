@@ -5,7 +5,7 @@
  * and produces normalized rows with trace fields for provenance.
  */
 
-import { v4 as uuidv4 } from "crypto";
+
 import type {
   FHIRBundle,
   FHIRResource,
