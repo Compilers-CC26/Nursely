@@ -201,6 +201,340 @@ const CLINICAL_RESPONSES: Record<string, TopicResponse[]> = {
       ],
     },
   ],
+  wound: [
+    {
+      content:
+        "**Wound & Pressure Injury Prevention / Management:**\n\n" +
+        "**Prevention (Stage 0):**\n" +
+        "• Reposition immobile patients every 2 hours (or per Braden score-based schedule)\n" +
+        "• Use pressure-redistribution mattress/overlay for Braden score ≤ 18\n" +
+        "• Maintain skin clean and dry; apply barrier cream to incontinent patients\n" +
+        "• Nutritional consult for albumin < 3.5 g/dL or unintentional weight loss\n\n" +
+        "**Wound Assessment (each dressing change):**\n" +
+        "• Document: size (L×W×D cm), stage/category, exudate type/amount, periwound skin, odor, granulation vs. necrotic tissue\n" +
+        "• Use TIME framework: Tissue, Infection/inflammation, Moisture, Edge\n\n" +
+        "**Staging Reference (NPIAP 2019):**\n" +
+        "Stage 1: Non-blanchable erythema | Stage 2: Partial-thickness skin loss | Stage 3: Full-thickness skin loss | Stage 4: Full-thickness tissue loss | Unstageable: Obscured depth | Deep Tissue: Persistent non-blanchable deep red/maroon",
+      citations: [
+        {
+          title:
+            "Pressure Injury Prevention & Treatment — Clinical Practice Guideline 2019",
+          source: "National Pressure Injury Advisory Panel (NPIAP)",
+          url: "https://npiap.com/page/ClinicalGuidelines",
+        },
+        {
+          title: "Wound, Ostomy & Continence Nursing Standards of Practice",
+          source: "Wound, Ostomy and Continence Nurses Society (WOCN)",
+          url: "https://www.wocn.org/page/publications",
+        },
+        {
+          title: "Preventing Pressure Ulcers in Hospitals",
+          source: "AHRQ Patient Safety Network",
+          url: "https://www.ahrq.gov/patient-safety/settings/hospital/resource/pressureulcer/tool/index.html",
+        },
+      ],
+    },
+  ],
+  vte: [
+    {
+      content:
+        "**VTE (DVT/PE) Prophylaxis & Assessment:**\n\n" +
+        "**Risk Assessment:**\n" +
+        "• Use Caprini or Padua score on admission and after any major clinical change\n" +
+        "• Immobility, prior VTE, malignancy, hypercoagulable state = high risk\n\n" +
+        "**Prophylaxis — confirm orders are in place:**\n" +
+        "• Pharmacologic: Enoxaparin, heparin, or fondaparinux (confirm renal function first)\n" +
+        "• Mechanical: Sequential compression devices (SCDs) — verify they are applied and powered on for ALL non-ambulatory patients\n" +
+        "• Ambulate early; document ambulation frequency\n\n" +
+        "**Signs of DVT / PE to escalate:**\n" +
+        "• DVT: Unilateral calf/thigh swelling, erythema, warmth, Homans' sign (low sensitivity)\n" +
+        "• PE: Sudden dyspnea, pleuritic chest pain, tachycardia, hypoxia, hemoptysis\n" +
+        "• Notify provider immediately; hold mechanical prophylaxis if active DVT suspected",
+      citations: [
+        {
+          title:
+            "VTE Prevention in Hospitalized Patients — CHEST Guideline 2012 (reaffirmed 2022)",
+          source: "American College of Chest Physicians (ACCP/CHEST)",
+          url: "https://journal.chestnet.org/article/S0012-3692(15)37236-5/fulltext",
+        },
+        {
+          title: "Prevention of VTE in Nonorthopedic Surgical Patients",
+          source: "AHRQ Patient Safety",
+          url: "https://www.ahrq.gov/patient-safety/settings/hospital/index.html",
+        },
+        {
+          title: "Deep Vein Thrombosis (Patient Education)",
+          source: "American Heart Association (AHA)",
+          url: "https://www.heart.org/en/health-topics/venous-thromboembolism",
+        },
+      ],
+    },
+  ],
+  glucose: [
+    {
+      content:
+        "**Glycemic Management in Hospitalized Patients:**\n\n" +
+        "**Target Glucose Ranges (ADA 2024):**\n" +
+        "• Non-ICU: 140–180 mg/dL (more stringent 110–140 mg/dL if appropriate and achievable)\n" +
+        "• ICU / critically ill: 140–180 mg/dL\n" +
+        "• Hypoglycemia (< 70 mg/dL): Treat immediately per protocol; notify provider if < 54 mg/dL\n\n" +
+        "**Nursing Actions:**\n" +
+        "• Check POC glucose per orders (typically AC&HS or q4–6h for NPO/continuous feeds)\n" +
+        "• Insulin administration: Always double-check dose with a second nurse for > 10 units\n" +
+        "• Hypoglycemia treatment (conscious patient): 15–20 g fast-acting carb → recheck in 15 min (Rule of 15)\n" +
+        "• Hyperglycemia > 300 mg/dL: Assess for DKA/HHS; notify provider\n" +
+        "• Document: Pre-meal glucose, insulin given, patient response, site rotation",
+      citations: [
+        {
+          title:
+            "Standards of Medical Care in Diabetes 2024 — Section 16: Diabetes Care in the Hospital",
+          source: "American Diabetes Association (ADA)",
+          url: "https://diabetesjournals.org/care/article/47/Supplement_1/S295/153952",
+        },
+        {
+          title: "AACE/ADA Consensus Statement on Inpatient Glycemic Control",
+          source: "American Association of Clinical Endocrinologists / ADA",
+          url: "https://www.endocrine.org/clinical-practice-guidelines",
+        },
+        {
+          title: "Insulin Safety in the Hospital",
+          source: "ISMP (Institute for Safe Medication Practices)",
+          url: "https://www.ismp.org/",
+        },
+      ],
+    },
+  ],
+  respiratory: [
+    {
+      content:
+        "**Respiratory Assessment & Airway Management:**\n\n" +
+        "**Routine Assessment:**\n" +
+        "• RR, depth, pattern, accessory muscle use, pursed-lip breathing, nasal flaring\n" +
+        "• Auscultate: crackles (fluid/consolidation), wheeze (bronchospasm), stridor (upper obstruction), diminished (effusion/atelectasis)\n" +
+        "• SpO2 target: ≥ 94% for most patients; 88–92% for COPD/hypercapnic risk\n\n" +
+        "**Oxygen Escalation Pathway:**\n" +
+        "NC 1–6 L/min → Simple mask 6–10 L/min → NRB 10–15 L/min → HFNC → NIPPV (BiPAP/CPAP) → Intubation\n\n" +
+        "**VAP Bundle (ventilated patients):**\n" +
+        "• HOB 30–45°, daily sedation vacation, daily SBT assessment, oral care q4h with chlorhexidine, PUD/DVT prophylaxis, cuff pressure 20–30 cmH₂O\n\n" +
+        "**Escalate Immediately If:**\n" +
+        "• SpO2 < 90% on current O₂, RR > 30, use of accessory muscles, cyanosis, altered mental status with respiratory distress",
+      citations: [
+        {
+          title:
+            "BTS Guideline for Oxygen Use in Adults in Healthcare and Emergency Settings 2017",
+          source: "British Thoracic Society (BTS)",
+          url: "https://www.brit-thoracic.org.uk/quality-improvement/guidelines/oxygen/",
+        },
+        {
+          title: "Strategies to Prevent VAP — SHEA/IDSA Compendium 2022",
+          source: "Society for Healthcare Epidemiology of America / IDSA",
+          url: "https://shea-online.org/index.php/practice-resources/priority-topics/vap",
+        },
+        {
+          title: "ATS/ERS/ESICM/SCCM/SRLF Statement: Noninvasive Ventilation",
+          source: "American Thoracic Society (ATS)",
+          url: "https://www.thoracic.org/statements/",
+        },
+      ],
+    },
+  ],
+  cardiac: [
+    {
+      content:
+        "**Cardiac Monitoring & Heart Failure Management:**\n\n" +
+        "**Telemetry Alarm Response:**\n" +
+        "• Asystole / VFib / pulseless VTach → Code Blue immediately\n" +
+        "• SVT with hemodynamic instability → rapid response + 12-lead ECG\n" +
+        "• New AFib: rate vs. rhythm control per provider; assess for anticoagulation order\n" +
+        "• 3rd degree AV block, new LBBB → stat provider notification\n\n" +
+        "**Heart Failure Monitoring (key nursing actions):**\n" +
+        "• Daily weight (same time, same scale, same clothing) — notify MD if > 2 lb/day or 5 lb/week gain\n" +
+        "• Strict I&O; fluid restriction per orders (typically 1.5–2 L/day in decompensated HF)\n" +
+        "• Assess JVD, S3/S4, peripheral edema, crackles at baseline and each shift\n" +
+        "• Hold ACE/ARB/ARNI if SBP < 90 or creatinine rise > 30% — notify provider\n" +
+        "• Educate: daily weights, low-sodium diet (< 2 g/day), medication adherence, activity limits",
+      citations: [
+        {
+          title:
+            "2022 AHA/ACC/HFSA Guideline for the Management of Heart Failure",
+          source: "American Heart Association / American College of Cardiology",
+          url: "https://www.ahajournals.org/doi/10.1161/CIR.0000000000001063",
+        },
+        {
+          title: "ECG Rhythm Interpretation — Nursing Reference",
+          source: "American Association of Critical-Care Nurses (AACN)",
+          url: "https://www.aacn.org/clinical-resources/practice-alerts",
+        },
+        {
+          title: "Telemetry Alarm Management in Adult Patients",
+          source: "The Joint Commission — Sentinel Event Alert 50",
+          url: "https://www.jointcommission.org/resources/sentinel-event/sentinel-event-alert-newsletters/sentinel-event-alert-50-medical-device-alarm-safety-in-hospitals/",
+        },
+      ],
+    },
+  ],
+  renal: [
+    {
+      content:
+        "**Acute Kidney Injury (AKI) — Nursing Management:**\n\n" +
+        "**KDIGO AKI Staging:**\n" +
+        "• Stage 1: Creatinine × 1.5–1.9× baseline, or ↑ ≥ 0.3 mg/dL, or UO < 0.5 mL/kg/h × 6–12h\n" +
+        "• Stage 2: Creatinine × 2.0–2.9× baseline, or UO < 0.5 mL/kg/h × 12h\n" +
+        "• Stage 3: Creatinine × 3×, or ≥ 4.0 mg/dL, or UO < 0.3 mL/kg/h × 24h, or anuria × 12h\n\n" +
+        "**Nursing Actions:**\n" +
+        "• Hourly urine output if Foley in place — notify if < 30 mL/h × 2h\n" +
+        "• Hold nephrotoxic agents (NSAIDs, aminoglycosides, IV contrast) — notify provider\n" +
+        "• Monitor K⁺, BUN, creatinine, acid-base\n" +
+        "• Fluid challenge vs. restriction per provider orders — avoid both overload and hypovolemia\n" +
+        "• If K⁺ > 6.0: ECG, emergent provider notification, prepare for calcium gluconate/kayexalate/insulin-dextrose per orders",
+      citations: [
+        {
+          title:
+            "KDIGO Clinical Practice Guideline for Acute Kidney Injury 2012",
+          source: "Kidney Disease: Improving Global Outcomes (KDIGO)",
+          url: "https://kdigo.org/guidelines/acute-kidney-injury/",
+        },
+        {
+          title: "AKI & Critical Care Nephrology",
+          source: "American Society of Nephrology (ASN)",
+          url: "https://www.asn-online.org/education/training/fellows/curriculum/",
+        },
+      ],
+    },
+  ],
+  delirium: [
+    {
+      content:
+        "**Delirium Assessment & Non-Pharmacologic Management:**\n\n" +
+        "**Screen Every Shift (use validated tool):**\n" +
+        "• CAM (Confusion Assessment Method): Acute onset + fluctuating course + inattention + disorganized thinking or altered LOC = Delirium positive\n" +
+        "• CAM-ICU for mechanically ventilated patients\n" +
+        "• RASS (Richmond Agitation-Sedation Scale) for sedation level\n\n" +
+        "**ABCDEF Bundle (ICU/acute care):**\n" +
+        "• **A** — Assess/prevent/manage pain (CPOT/NRS)\n" +
+        "• **B** — Both SAT & SBT daily\n" +
+        "• **C** — Choice of sedation (minimize benzodiazepines; prefer propofol/dexmedetomidine)\n" +
+        "• **D** — Delirium monitoring & management (re-orient q4h, clocks, calendars, family presence)\n" +
+        "• **E** — Early mobility & exercise\n" +
+        "• **F** — Family engagement\n\n" +
+        "**Avoid high-risk medications:** Review Beers Criteria — anticholinergics, benzodiazepines, antihistamines (diphenhydramine), meperidine, antipsychotics in dementia patients",
+      citations: [
+        {
+          title:
+            "Clinical Practice Guidelines for the Prevention and Management of Pain, Agitation/Sedation, Delirium, Immobility, and Sleep Disruption in Adult ICU Patients (PADIS 2018)",
+          source: "Society of Critical Care Medicine (SCCM)",
+          url: "https://www.sccm.org/Clinical-Resources/Guidelines/Guidelines/Guidelines-for-the-Prevention-and-Management-of-Pa",
+        },
+        {
+          title: "American Geriatrics Society 2023 Updated Beers Criteria",
+          source: "American Geriatrics Society (AGS)",
+          url: "https://agsjournals.onlinelibrary.wiley.com/doi/10.1111/jgs.18372",
+        },
+        {
+          title: "Confusion Assessment Method (CAM) Tool",
+          source: "Hospital Elder Life Program (HELP), Sharon Inouye MD",
+          url: "https://www.hospitalelderlifeprogram.org/delirium-instruments/cam/",
+        },
+      ],
+    },
+  ],
+  infection: [
+    {
+      content:
+        "**Infection Control & Hand Hygiene:**\n\n" +
+        "**WHO Five Moments for Hand Hygiene:**\n" +
+        "1. Before touching a patient\n" +
+        "2. Before a clean/aseptic procedure\n" +
+        "3. After body fluid exposure risk\n" +
+        "4. After touching a patient\n" +
+        "5. After touching patient surroundings\n\n" +
+        "**Transmission-Based Precautions:**\n" +
+        "• **Contact** (MRSA, C. diff, VRE, norovirus): Gown + gloves on room entry; C. diff → soap & water only (alcohol ineffective)\n" +
+        "• **Droplet** (influenza, COVID, RSV, pertussis): Surgical mask within 3 feet; patient wears mask during transport\n" +
+        "• **Airborne** (TB, measles, varicella, COVID aerosol-generating): N95 or PAPR; negative-pressure room; door closed\n\n" +
+        "**CLABSI / CAUTI Prevention:**\n" +
+        "• CLABSI: Daily necessity review, hub disinfection ('scrub the hub' ≥ 15 sec), dressing integrity, site inspection\n" +
+        "• CAUTI: Daily catheter necessity review; remove asap; maintain closed system; bag below bladder; perineal care",
+      citations: [
+        {
+          title: "CDC Hand Hygiene in Healthcare Settings",
+          source: "Centers for Disease Control and Prevention (CDC)",
+          url: "https://www.cdc.gov/handhygiene/",
+        },
+        {
+          title:
+            "2007 Guideline for Isolation Precautions in Healthcare Facilities",
+          source: "CDC / HICPAC",
+          url: "https://www.cdc.gov/infectioncontrol/guidelines/isolation/",
+        },
+        {
+          title: "CLABSI & CAUTI Prevention Toolkit",
+          source: "AHRQ Patient Safety",
+          url: "https://www.ahrq.gov/hai/clabsi-tools/index.html",
+        },
+      ],
+    },
+  ],
+  stroke: [
+    {
+      content:
+        "**Stroke — Recognition, Response & Post-Stroke Nursing Care:**\n\n" +
+        "**FAST Recognition:**\n" +
+        "• **F**ace drooping • **A**rm weakness • **S**peech difficulty • **T**ime to call code stroke\n" +
+        "• Last known well time is critical — document precisely\n\n" +
+        "**Acute Care (first 24h):**\n" +
+        "• Maintain SpO2 ≥ 94%; O2 only if hypoxic\n" +
+        "• BP management: Do NOT aggressively lower unless > 220/120 (ischemic, no tPA) or > 180/105 (post-tPA)\n" +
+        "• Swallow screen before any PO — NPO until passed; aspiration precautions\n" +
+        "• HOB flat (or 0–15°) for 24h if ischemic/no ICP concerns → improves perfusion\n" +
+        "• Glucose target 140–180 mg/dL; avoid hyperthermia (treat temp > 37.5°C)\n\n" +
+        "**Ongoing Monitoring:**\n" +
+        "• Neuro checks q1–4h (NIHSS, GCS, pupil response, focal deficits)\n" +
+        "• Hemorrhagic conversion: New headache, BP spike, declining neuro status — stat CT, notify provider",
+      citations: [
+        {
+          title:
+            "2019 AHA/ASA Guidelines for the Early Management of Acute Ischemic Stroke",
+          source: "American Heart Association / American Stroke Association",
+          url: "https://www.ahajournals.org/doi/10.1161/STR.0000000000000211",
+        },
+        {
+          title: "Nursing Management of Stroke",
+          source: "American Association of Neuroscience Nurses (AANN)",
+          url: "https://www.aann.org/publications/cpg",
+        },
+      ],
+    },
+  ],
+  drug_interaction: [
+    {
+      content:
+        "**Drug Interaction Check — Nursing Responsibilities:**\n\n⚠️ **Never rely on memory alone.** Always verify using a clinical reference before co-administering.\n\n**Key high-risk combinations:**\n• **Benzodiazepines + CNS depressants** (e.g., clonazepam + opioids, alcohol, sedative-hypnotics): FDA **black box warning** — additive CNS/respiratory depression, risk of death\n• **Acetaminophen**: safe max is **4 g/day** total — check for hidden acetaminophen in combination products (Percocet, Vicodin, NyQuil, etc.). Reduce to **2 g/day** in liver disease or ETOH use\n• **Anticoagulants + NSAIDs/aspirin**: increased bleeding risk\n• **QT-prolonging agents** (fluoroquinolones, antipsychotics, methadone): additive arrhythmia risk\n\n**Your action steps:**\n1. Cross-reference the **full MAR** against an interaction checker (Lexicomp or Micromedex)\n2. Contact the **pharmacist** for any CNS depressant combination or polypharmacy concern\n3. Document your interaction review in the nursing note\n4. Hold and notify the provider if a contraindicated combination is identified",
+      citations: [
+        {
+          title:
+            "FDA Black Box Warning: Opioids + Benzodiazepines / CNS Depressants",
+          source: "U.S. Food & Drug Administration (FDA)",
+          url: "https://www.fda.gov/drugs/drug-safety-and-availability/fda-drug-safety-communication-fda-warns-about-serious-risks-and-death-when-combining-opioid-pain-or",
+        },
+        {
+          title: "Drug Interaction Checker (Lexicomp)",
+          source: "UpToDate / Lexicomp",
+          url: "https://www.uptodate.com/drug-interactions/",
+        },
+        {
+          title: "High-Alert Medications in Acute Care Settings",
+          source: "ISMP (Institute for Safe Medication Practices)",
+          url: "https://www.ismp.org/recommendations/high-alert-medications-acute-list",
+        },
+        {
+          title: "Acetaminophen Hepatotoxicity and Safe Dosing",
+          source: "FDA / Acetaminophen Awareness Coalition",
+          url: "https://www.fda.gov/drugs/medication-health-fraud/acetaminophen-information",
+        },
+      ],
+    },
+  ],
 };
 
 const PATIENT_CONTEXT_RESPONSES: TopicResponse[] = [
@@ -277,6 +611,9 @@ function matchTopic(message: string): string | null {
         "dosage",
         "administer",
         "give",
+        "mar",
+        "high-alert",
+        "high alert",
       ],
     ],
     [
@@ -291,6 +628,8 @@ function matchTopic(message: string): string | null {
         "bp",
         "hr",
         "temp",
+        "pulse",
+        "respiratory rate",
       ],
     ],
     [
@@ -306,20 +645,241 @@ function matchTopic(message: string): string | null {
         "glucose",
         "hemoglobin",
         "critical value",
+        "creatinine",
+        "wbc",
+        "platelet",
+        "inr",
+        "coagulation",
       ],
     ],
     ["fall", ["fall", "falling", "slip", "balance", "morse", "bed alarm"]],
     [
       "pain",
-      ["pain", "hurt", "discomfort", "analgesic", "opioid", "narcotic", "prn"],
+      [
+        "pain",
+        "hurt",
+        "discomfort",
+        "analgesic",
+        "opioid",
+        "narcotic",
+        "prn",
+        "cpot",
+        "flacc",
+      ],
     ],
     [
       "sbar",
-      ["sbar", "handoff", "report", "communicate", "situation background"],
+      [
+        "sbar",
+        "handoff",
+        "report",
+        "communicate",
+        "situation background",
+        "hand-off",
+      ],
     ],
     [
       "code",
-      ["code blue", "code", "arrest", "cpr", "resuscitation", "emergency"],
+      [
+        "code blue",
+        "code",
+        "arrest",
+        "cpr",
+        "resuscitation",
+        "emergency",
+        "acls",
+        "bls",
+        "aed",
+        "defibrillat",
+      ],
+    ],
+    [
+      "wound",
+      [
+        "wound",
+        "pressure injur",
+        "pressure ulcer",
+        "decubitus",
+        "skin breakdown",
+        "stage",
+        "dressing",
+        "braden",
+        "tissue",
+      ],
+    ],
+    [
+      "vte",
+      [
+        "dvt",
+        "pe ",
+        "pulmonary embolism",
+        "deep vein",
+        "blood clot",
+        "thrombosis",
+        "vte",
+        "anticoagulat",
+        "scd",
+        "sequential compress",
+        "lovenox",
+        "enoxaparin",
+        "heparin",
+      ],
+    ],
+    [
+      "glucose",
+      [
+        "glucose",
+        "blood sugar",
+        "insulin",
+        "hyperglycemia",
+        "hypoglycemia",
+        "diabetic",
+        "diabetes",
+        "a1c",
+        "dka",
+        "hhs",
+        "glycemic",
+      ],
+    ],
+    [
+      "respiratory",
+      [
+        "breath",
+        "respiratory",
+        "lung",
+        "pneumonia",
+        "copd",
+        "asthma",
+        "wheez",
+        "crackle",
+        "oxygen therapy",
+        "intubat",
+        "ventilat",
+        "bipap",
+        "cpap",
+        "hfnc",
+        "vap",
+        "airway",
+        "nebulizer",
+      ],
+    ],
+    [
+      "cardiac",
+      [
+        "cardiac",
+        "heart failure",
+        "chf",
+        "afib",
+        "atrial fibril",
+        "ekg",
+        "ecg",
+        "telemetry",
+        "rhythm",
+        "pacemaker",
+        "chest pain",
+        "mi ",
+        "myocardial",
+        "ejection fraction",
+        "bpm",
+      ],
+    ],
+    [
+      "renal",
+      [
+        "renal",
+        "kidney",
+        "aki",
+        "acute kidney",
+        "creatinine",
+        "bun",
+        "urine output",
+        "foley",
+        "oliguria",
+        "anuria",
+        "dialysis",
+        "urine",
+      ],
+    ],
+    [
+      "delirium",
+      [
+        "delirium",
+        "confused",
+        "confusion",
+        "agitat",
+        "restless",
+        "altered mental",
+        "orientation",
+        "cam",
+        "rass",
+        "sedation",
+        "sundown",
+      ],
+    ],
+    [
+      "infection",
+      [
+        "infection control",
+        "precaution",
+        "isolation",
+        "mrsa",
+        "vre",
+        "c. diff",
+        "clostridium",
+        "hand hygiene",
+        "ppe",
+        "gown",
+        "gloves",
+        "clabsi",
+        "cauti",
+        "central line",
+        "catheter",
+      ],
+    ],
+    [
+      "stroke",
+      [
+        "stroke",
+        "tia",
+        "neuro",
+        "neurologic",
+        "nihss",
+        "facial droop",
+        "arm weakness",
+        "speech",
+        "cva",
+        "cerebral",
+        "aphasia",
+        "fast ",
+      ],
+    ],
+    [
+      "drug_interaction",
+      [
+        "interact",
+        "interaction",
+        "go with",
+        "goes with",
+        "go together",
+        "goes together",
+        "combine",
+        "combined with",
+        "compatible",
+        "safe with",
+        "together with",
+        "contraindicated",
+        "contraindication",
+        "drug-drug",
+        "polypharmacy",
+        "can i give",
+        "can you give",
+        "mix with",
+        "mixing",
+        "acetaminophen",
+        "benzodiazepine",
+        "opioid combination",
+        "drug interaction",
+      ],
     ],
   ];
 
@@ -327,6 +887,16 @@ function matchTopic(message: string): string | null {
     if (keywords.some((kw) => lower.includes(kw))) return topic;
   }
   return null;
+}
+
+/**
+ * Return authoritative citations for a given message topic.
+ * Used to supplement Snowflake answers with professional sources.
+ */
+function getTopicCitations(message: string): Citation[] {
+  const topic = matchTopic(message);
+  if (!topic || !CLINICAL_RESPONSES[topic]) return [];
+  return CLINICAL_RESPONSES[topic][0].citations;
 }
 
 let msgCounter = 0;
@@ -637,6 +1207,21 @@ export async function generateResponse(
     ].join("\n");
   }
 
+  // ── Short-circuit: pure clinical knowledge (no patient, no cohort intent) ──
+  // If the question has no patient context and no cohort keyword but matches a
+  // known clinical topic, answer from the local evidence library immediately.
+  // This avoids 60 s+ Snowflake/LLM round-trips for questions like
+  // "does acetaminophen interact with clonazepam?" which need no patient data.
+  if (!effectivePatient && !hasCohortKeyword) {
+    const knowledgeTopic = matchTopic(message);
+    if (knowledgeTopic !== null && CLINICAL_RESPONSES[knowledgeTopic]) {
+      const entry = CLINICAL_RESPONSES[knowledgeTopic][0];
+      // Brief simulated latency for UX consistency
+      await new Promise((r) => setTimeout(r, 80 + Math.random() * 120));
+      return wrap({ content: entry.content, citations: entry.citations });
+    }
+  }
+
   // ── Try Snowflake RAG ──
   try {
     if (isGlobalIntent) {
@@ -653,7 +1238,15 @@ export async function generateResponse(
       const gResult = await askSnowflakeCohortQuestion(enrichedMessage);
       if (gResult) {
         const fc = detectFilterIntent(message);
-        return wrap(fc ? { ...gResult, filterCommand: fc } : gResult);
+        const topicCites = getTopicCitations(message);
+        const merged = [
+          ...gResult.citations,
+          ...topicCites.filter(
+            (tc) => !gResult.citations.some((gc) => gc.title === tc.title),
+          ),
+        ];
+        const enriched: ChatResponse = { ...gResult, citations: merged };
+        return wrap(fc ? { ...enriched, filterCommand: fc } : enriched);
       }
     } else if (effectivePatient) {
       // Inject live frontend data into the question so Cortex always has current values
@@ -665,13 +1258,22 @@ export async function generateResponse(
       );
       if (sfResult) {
         const fc = detectFilterIntent(message);
+        const topicCites = getTopicCitations(message);
+        const sfCites = sfResult.citations.map((c) => ({
+          title: c.title,
+          source: c.source,
+          url: c.url,
+        }));
+        // Merge: Snowflake sources first, then non-duplicate professional sources
+        const merged = [
+          ...sfCites,
+          ...topicCites.filter(
+            (tc) => !sfCites.some((sc) => sc.title === tc.title),
+          ),
+        ];
         return wrap({
           content: sfResult.answer,
-          citations: sfResult.citations.map((c) => ({
-            title: c.title,
-            source: c.source,
-            url: c.url,
-          })),
+          citations: merged,
           ...(fc ? { filterCommand: fc } : {}),
         });
       }
@@ -754,6 +1356,39 @@ export async function generateResponse(
   // For single-patient questions, use the live frontend data directly
   if (effectivePatient) {
     const liveContext = buildLivePatientContext(effectivePatient);
+    // Try dynamic patient-specific responses for vitals / meds
+    const intentForDynamic =
+      /\b(vital|heart rate|blood pressure|spo2|temp|resp)\b/i.test(message)
+        ? "vitals"
+        : /\b(med|drug|dose|administer|mar|high.alert|interaction)\b/i.test(
+              message,
+            )
+          ? "meds"
+          : /\b(recommend|intervention|care plan|priority|action|next step)\b/i.test(
+                message,
+              )
+            ? "recs"
+            : null;
+    if (intentForDynamic) {
+      const dynamic = generateDynamicResponse(
+        intentForDynamic,
+        effectivePatient,
+      );
+      return wrap(dynamic);
+    }
+    // Topic-matched professional response if available
+    const patientTopic = matchTopic(message);
+    if (patientTopic && CLINICAL_RESPONSES[patientTopic]) {
+      const responses = CLINICAL_RESPONSES[patientTopic];
+      const base = responses[msgCounter % responses.length];
+      msgCounter++;
+      return wrap({
+        content:
+          `*Context: **${effectivePatient.name}** · Rm ${effectivePatient.room} · Dx: ${effectivePatient.diagnosis || "No active dx"}*\n\n` +
+          base.content,
+        citations: base.citations,
+      });
+    }
     return wrap({
       content:
         `*AI assistant temporarily unavailable. Here is the current data on file for ${effectivePatient.name}:*\n\n` +
@@ -765,6 +1400,15 @@ export async function generateResponse(
         { title: "EHR Record", source: "Live Patient Data", url: "#" },
       ],
     });
+  }
+
+  // No patient context — try topic-matched protocol answer
+  const genericTopic = matchTopic(message);
+  if (genericTopic && CLINICAL_RESPONSES[genericTopic]) {
+    const responses = CLINICAL_RESPONSES[genericTopic];
+    const base = responses[msgCounter % responses.length];
+    msgCounter++;
+    return wrap(base);
   }
 
   return wrap({

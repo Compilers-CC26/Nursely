@@ -258,7 +258,7 @@ BEGIN
 
         'RESPONSE (begin with the most clinically urgent point):';
 
-    v_answer := (SELECT SNOWFLAKE.CORTEX.COMPLETE('llama3-8b', :v_prompt));
+    v_answer := (SELECT SNOWFLAKE.CORTEX.COMPLETE('mistral-7b', :v_prompt));
 
     v_result := OBJECT_CONSTRUCT(
         'answer', :v_answer,
@@ -373,7 +373,7 @@ BEGIN
 
         'RESPONSE (answer the question above directly — do not recite risk rankings unless that is what was asked):';
 
-    v_answer := (SELECT SNOWFLAKE.CORTEX.COMPLETE('llama3-8b', :v_prompt));
+    v_answer := (SELECT SNOWFLAKE.CORTEX.COMPLETE('mistral-7b', :v_prompt));
 
     RETURN OBJECT_CONSTRUCT(
         'answer', :v_answer,
