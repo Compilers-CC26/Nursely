@@ -9,15 +9,39 @@ const isDev = !app.isPackaged;
 if (isDev) {
   require("dotenv").config({ path: path.join(__dirname, "../.env") });
 } else {
-  // In production, the .env file is bundled inside the app.asar package
-  const envPath = path.join(process.resourcesPath, "app.asar", ".env");
-  if (fs.existsSync(envPath)) {
+  // Prefer the unpacked copy (asarUnpack puts it here as a real file)
+  const unpacked = path.join(
+    process.resourcesPath,
+    "app.asar.unpacked",
+    ".env",
+  );
+  const inAsar = path.join(process.resourcesPath, "app.asar", ".env");
+  const envPath = fs.existsSync(unpacked)
+    ? unpacked
+    : fs.existsSync(inAsar)
+      ? inAsar
+      : null;
+  if (envPath) {
     require("dotenv").config({ path: envPath });
-    console.log("[Main] Loaded bundled .env config.");
+    console.log("[Main] Loaded .env from:", envPath);
+    console.log(
+      "[Main] SNOWFLAKE_ACCOUNT:",
+      process.env.SNOWFLAKE_ACCOUNT ? "set" : "MISSING",
+    );
+    console.log(
+      "[Main] SNOWFLAKE_USER:",
+      process.env.SNOWFLAKE_USER ? "set" : "MISSING",
+    );
+    console.log(
+      "[Main] SNOWFLAKE_PASSWORD:",
+      process.env.SNOWFLAKE_PASSWORD ? "set" : "MISSING",
+    );
   } else {
-    console.warn(
-      "[Main] WARNING: No .env file found inside app bundle at",
-      envPath,
+    console.error(
+      "[Main] ERROR: No .env file found. Tried:",
+      unpacked,
+      "and",
+      inAsar,
     );
   }
 }

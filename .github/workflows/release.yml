@@ -28,12 +28,13 @@ jobs:
         run: |
           cat <<EOF > .env
           SNOWFLAKE_ACCOUNT=${{ secrets.SNOWFLAKE_ACCOUNT }}
-          SNOWFLAKE_USERNAME=${{ secrets.SNOWFLAKE_USERNAME }}
+          SNOWFLAKE_USER=${{ secrets.SNOWFLAKE_USER }}
           SNOWFLAKE_PASSWORD=${{ secrets.SNOWFLAKE_PASSWORD }}
           SNOWFLAKE_DATABASE=${{ secrets.SNOWFLAKE_DATABASE }}
           SNOWFLAKE_SCHEMA=${{ secrets.SNOWFLAKE_SCHEMA }}
           SNOWFLAKE_WAREHOUSE=${{ secrets.SNOWFLAKE_WAREHOUSE }}
-          SNOWFLAKE_ROLE=${{ secrets.SNOWFLAKE_ROLE }}
+          FHIR_BASE_URL=https://r4.smarthealthit.org
+          SYNC_LOOKBACK_HOURS=72
           EOF
 
       - name: Build & package (Windows)
@@ -66,12 +67,13 @@ jobs:
         run: |
           cat <<EOF > .env
           SNOWFLAKE_ACCOUNT=${{ secrets.SNOWFLAKE_ACCOUNT }}
-          SNOWFLAKE_USERNAME=${{ secrets.SNOWFLAKE_USERNAME }}
+          SNOWFLAKE_USER=${{ secrets.SNOWFLAKE_USER }}
           SNOWFLAKE_PASSWORD=${{ secrets.SNOWFLAKE_PASSWORD }}
           SNOWFLAKE_DATABASE=${{ secrets.SNOWFLAKE_DATABASE }}
           SNOWFLAKE_SCHEMA=${{ secrets.SNOWFLAKE_SCHEMA }}
           SNOWFLAKE_WAREHOUSE=${{ secrets.SNOWFLAKE_WAREHOUSE }}
-          SNOWFLAKE_ROLE=${{ secrets.SNOWFLAKE_ROLE }}
+          FHIR_BASE_URL=https://r4.smarthealthit.org
+          SYNC_LOOKBACK_HOURS=72
           EOF
 
       - name: Build & package (macOS)
