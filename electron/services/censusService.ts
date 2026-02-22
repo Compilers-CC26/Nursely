@@ -78,7 +78,18 @@ function mapSnapshotToUIModel(snapshot: any): Patient | null {
     }
   }
 
-  const uiLabs: Lab[] = snapshot.labs.slice(0, 5).map((l: any) => ({
+  // Sort labs: critical first, then high/low, then normal — so abnormal results
+  // are never silently dropped by the slice limit.
+  const FLAG_ORDER: Record<string, number> = {
+    critical: 0,
+    high: 1,
+    low: 2,
+    normal: 3,
+  };
+  const sortedLabs = [...snapshot.labs].sort(
+    (a: any, b: any) => (FLAG_ORDER[a.flag] ?? 3) - (FLAG_ORDER[b.flag] ?? 3),
+  );
+  const uiLabs: Lab[] = sortedLabs.slice(0, 15).map((l: any) => ({
     name: l.lab_name,
     value: String(l.value),
     unit: l.unit,

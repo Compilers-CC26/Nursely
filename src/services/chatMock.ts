@@ -370,6 +370,61 @@ function getEffectiveDiagnosis(p: Patient): string | null {
 }
 
 /**
+ * Scan a message for any patient name from the live census.
+ * Checks full name first, then last name alone (≥5 chars) as a fallback.
+ * Returns the matched patient or null.
+ */
+function detectNamedPatient(
+  lowerMessage: string,
+  census: Patient[],
+): Patient | null {
+  for (const p of census) {
+    const fullName = p.name.toLowerCase();
+    if (lowerMessage.includes(fullName)) return p;
+    // Last-name fallback — only if distinctive enough to avoid false positives
+    const parts = fullName.split(/\s+/);
+    const lastName = parts[parts.length - 1];
+    if (lastName.length >= 5 && lowerMessage.includes(lastName)) return p;
+  }
+  return null;
+}
+
+/**
+ * Build a compact roster of all census patients to prepend to cohort queries.
+ * Gives the LLM individual patient context for population-level questions.
+ */
+function buildCensusRoster(census: Patient[]): string {
+  const lines = census
+    .map((p) => {
+      const dx = getEffectiveDiagnosis(p) ?? "No active dx";
+      const flags: string[] = [];
+      if (p.riskScore > 0.65) flags.push("HIGH RISK");
+      if (p.labs.some((l) => l.flag === "critical"))
+        flags.push("CRITICAL LABS");
+      if (p.vitals.hr !== null && (p.vitals.hr > 120 || p.vitals.hr < 50))
+        flags.push("HR ALERT");
+      if (p.vitals.bpSys !== null && p.vitals.bpSys < 90) flags.push("LOW BP");
+      if (p.vitals.spo2 !== null && p.vitals.spo2 < 90) flags.push("LOW SPO2");
+      const medsSnip =
+        p.meds.length > 0
+          ? p.meds.slice(0, 3).join(", ") +
+            (p.meds.length > 3 ? ` +${p.meds.length - 3} more` : "")
+          : "none";
+      return (
+        `- ${p.name} | Rm ${p.room} | Dx: ${dx} | Risk: ${p.riskScore.toFixed(2)}` +
+        ` | Meds: ${medsSnip}` +
+        (flags.length ? ` | ALERTS: ${flags.join(", ")}` : "")
+      );
+    })
+    .join("\n");
+  return (
+    `[LIVE UNIT CENSUS — ${census.length} patients. ` +
+    `Use this roster as the authoritative source for all patient names, rooms, diagnoses, and alerts.]\n` +
+    lines
+  );
+}
+
+/**
  * Generate a mock response based on the user message and optional patient context.
  * Returns content + citations for source attribution.
  */
@@ -416,8 +471,20 @@ export async function generateResponse(
     "any patients",
     "how many patients",
   ];
-  const isGlobalIntent =
-    !_selectedPatient || COHORT_KEYWORDS.some((kw) => lower.includes(kw));
+  const hasCohortKeyword = COHORT_KEYWORDS.some((kw) => lower.includes(kw));
+
+  // Name detection: if the message names a specific patient from the census,
+  // treat it as a single-patient query even if no one is selected in the table.
+  const namedPatient =
+    !hasCohortKeyword && _liveCensus.length > 0
+      ? detectNamedPatient(lower, _liveCensus)
+      : null;
+
+  // effectivePatient: explicit selection > named in message > null
+  const effectivePatient = _selectedPatient ?? namedPatient;
+
+  // Global if no patient can be resolved, OR explicit cohort keyword present
+  const isGlobalIntent = !effectivePatient || hasCohortKeyword;
 
   // ── Build live frontend context to inject into every LLM call ──
   // Snowflake tables are often stale or empty; the frontend data is always current.
@@ -454,17 +521,24 @@ export async function generateResponse(
   // ── Try Snowflake RAG ──
   try {
     if (isGlobalIntent) {
-      const enrichedMessage = _selectedPatient
-        ? `Regarding patient ${_selectedPatient.name} (Diagnosis: ${_selectedPatient.diagnosis}, Risk Score: ${_selectedPatient.riskScore.toFixed(2)}): ${message}`
-        : message;
+      // Prepend the full live census roster so Cortex can reason over ALL
+      // patients by name, not just aggregate stats or the top-5 risk list.
+      let enrichedMessage = message;
+      if (effectivePatient) {
+        enrichedMessage = `Regarding patient ${effectivePatient.name} (Diagnosis: ${effectivePatient.diagnosis}, Risk Score: ${effectivePatient.riskScore.toFixed(2)}): ${message}`;
+      }
+      if (_liveCensus.length > 0) {
+        const roster = buildCensusRoster(_liveCensus);
+        enrichedMessage = `${roster}\n\nNURSE QUESTION: ${enrichedMessage}`;
+      }
       const gResult = await askSnowflakeCohortQuestion(enrichedMessage);
       if (gResult) return gResult;
-    } else if (_selectedPatient) {
+    } else if (effectivePatient) {
       // Inject live frontend data into the question so Cortex always has current values
-      const liveContext = buildLivePatientContext(_selectedPatient);
+      const liveContext = buildLivePatientContext(effectivePatient);
       const enrichedQuestion = `[LIVE EHR DATA — use this as the authoritative source for vitals, labs, and medications]\n${liveContext}\n\nNURSE QUESTION: ${message}`;
       const sfResult = await askSnowflakeQuestion(
-        _selectedPatient.id,
+        effectivePatient.id,
         enrichedQuestion,
       );
       if (sfResult) {
@@ -554,11 +628,11 @@ export async function generateResponse(
   }
 
   // For single-patient questions, use the live frontend data directly
-  if (_selectedPatient) {
-    const liveContext = buildLivePatientContext(_selectedPatient);
+  if (effectivePatient) {
+    const liveContext = buildLivePatientContext(effectivePatient);
     return {
       content:
-        `*AI assistant temporarily unavailable. Here is the current data on file for ${_selectedPatient.name}:*\n\n` +
+        `*AI assistant temporarily unavailable. Here is the current data on file for ${effectivePatient.name}:*\n\n` +
         liveContext
           .split("\n")
           .map((line) => `• ${line}`)
