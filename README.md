@@ -1,5 +1,7 @@
 # Nursely
 
+![License: Proprietary](https://img.shields.io/badge/license-Proprietary-red.svg)
+
 > AI-powered nurse-facing patient analyst — built for CrimsonCode '26.
 
 Nursely is an Electron desktop app that pulls live patient data from a FHIR server, syncs it to Snowflake, and surfaces a Cortex AI chat assistant and smart analyst columns directly on the nurse's census view.
@@ -176,3 +178,11 @@ Artifacts are attached to the GitHub Release. Required repository secrets: `SNOW
 ## Snowflake setup
 
 All infrastructure lives in [`snowflake/setup_all.sql`](snowflake/setup_all.sql) — run it top-to-bottom in a Snowflake worksheet to create tables, seed the knowledge base, and deploy both stored procedures.
+
+---
+
+## License
+
+Copyright &copy; 2026 **Compilers CC26 Team**. All Rights Reserved.
+
+This software is proprietary and confidential. It may not be used, copied, modified, distributed, or commercially exploited by any party outside the Compilers CC26 Team without explicit written permission. See [LICENSE](LICENSE) for the full terms.
