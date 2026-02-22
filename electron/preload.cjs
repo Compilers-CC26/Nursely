@@ -23,7 +23,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     onPatientUpdate: (callback) => {
       const wrappedCallback = (_event, patient) => callback(patient);
       ipcRenderer.on("fhir:on-patient-update", wrappedCallback);
-      return () => ipcRenderer.removeListener("fhir:on-patient-update", wrappedCallback);
+      return () =>
+        ipcRenderer.removeListener("fhir:on-patient-update", wrappedCallback);
     },
 
     /** Clear the FHIR session cache */
@@ -45,8 +46,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
       }),
 
     /** Get cohort-level analytics from Snowflake */
-    getCohortSummary: () =>
-      ipcRenderer.invoke("snowflake:cohort-summary"),
+    getCohortSummary: () => ipcRenderer.invoke("snowflake:cohort-summary"),
 
     /** Pre-seed multiple patients in the background */
     preseedCohort: (patientIds) =>
@@ -54,5 +54,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
     /** Check if Snowflake connection is available */
     getStatus: () => ipcRenderer.invoke("snowflake:status"),
+
+    /** Direct CORTEX.COMPLETE call — used for batch classification without stored-proc overhead */
+    classify: (prompt) => ipcRenderer.invoke("snowflake:classify", { prompt }),
   },
 });

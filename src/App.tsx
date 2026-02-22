@@ -279,18 +279,23 @@ export default function App() {
       }
     }
     return [...base].sort((a, b) => {
-      const aVal = (a as any)[sortKey];
-      const bVal = (b as any)[sortKey];
+      const col = columns.find((c) => c.key === sortKey);
+      const getVal = (p: Patient) =>
+        col?.sortValue ? col.sortValue(p) : (p as any)[sortKey];
+      const aVal = getVal(a);
+      const bVal = getVal(b);
       if (aVal == null) return 1;
       if (bVal == null) return -1;
-      if (typeof aVal === "string") {
+      if (typeof aVal === "string" && typeof bVal === "string") {
         return sortDir === "asc"
           ? aVal.localeCompare(bVal)
           : bVal.localeCompare(aVal);
       }
-      return sortDir === "asc" ? aVal - bVal : bVal - aVal;
+      const aNum = Number(aVal);
+      const bNum = Number(bVal);
+      return sortDir === "asc" ? aNum - bNum : bNum - aNum;
     });
-  }, [liveCensus, debouncedQuery, sortKey, sortDir, activeFilter]);
+  }, [liveCensus, debouncedQuery, sortKey, sortDir, activeFilter, columns]);
 
   // --- Handlers ---
   const handleSort = useCallback(
@@ -327,6 +332,28 @@ export default function App() {
         label,
         visible: true,
         width: "w-[90px]",
+        sortValue: (p: Patient) => {
+          const pLower = p.name.toLowerCase().trim();
+          const rawLabel =
+            results.get(p.name) ??
+            [...results.entries()].find(
+              ([k]) => k.toLowerCase().trim() === pLower,
+            )?.[1] ??
+            [...results.entries()].find(([k]) => {
+              const kl = k.toLowerCase().trim();
+              return kl.includes(pLower) || pLower.includes(kl);
+            })?.[1];
+          if (!rawLabel) return -1; // unlabelled patients sort to bottom
+          const ORDER: Record<string, number> = {
+            YES: 2,
+            HIGH: 2,
+            POSSIBLE: 1,
+            MEDIUM: 1,
+            NO: 0,
+            LOW: 0,
+          };
+          return ORDER[rawLabel.toUpperCase()] ?? rawLabel.toLowerCase();
+        },
         render: (p: Patient) => {
           // Try exact match first, then case-insensitive, then partial (LLM may reformat names)
           const pLower = p.name.toLowerCase().trim();

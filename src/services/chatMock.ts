@@ -9,6 +9,7 @@ export interface Citation {
   title: string;
   source: string;
   url: string;
+  content?: string;
 }
 
 export interface ChatMessage {
@@ -438,6 +439,12 @@ export async function runQueryColumnBatch(
   if (!census.length)
     return { results: new Map(), error: "No patients in census" };
 
+  if (!window.electronAPI?.snowflake?.classify)
+    return {
+      results: new Map(),
+      error: "Snowflake IPC not available (not running in Electron)",
+    };
+
   const rosterLines = census.map((p) => {
     const dx = getEffectiveDiagnosis(p) ?? "No active dx";
     const medsShort =
@@ -458,40 +465,57 @@ export async function runQueryColumnBatch(
   });
 
   const prompt =
-    `TASK: Score each patient with EXACTLY ONE WORD. No other text allowed in the values.\n` +
-    `Allowed values: YES | POSSIBLE | NO | N/A\n` +
-    `- YES      = diagnosis, meds, or labs directly match the question\n` +
-    `- POSSIBLE = related comorbidity or indirect evidence\n` +
-    `- NO       = no matching evidence (USE THIS AS DEFAULT when unsure)\n` +
-    `- N/A      = completely insufficient data\n\n` +
-    `DO NOT write the diagnosis. DO NOT explain. ONE WORD PER PATIENT ONLY.\n\n` +
-    `EXAMPLE — question: "Does this patient have diabetes?"\n` +
-    `{"Alice Johnson": "YES", "Bob Smith": "NO", "Carol White": "POSSIBLE", "Dan Brown": "N/A"}\n\n` +
+    `You are a JSON-only classification engine. Output ONLY a JSON object. No explanations, no markdown, no prose.\n\n` +
+    `TASK: For each patient below, output exactly one label based on whether the clinical question applies.\n` +
+    `Allowed labels: YES | POSSIBLE | NO | N/A\n` +
+    `  YES      = strong direct evidence in the data\n` +
+    `  POSSIBLE = indirect or partial evidence\n` +
+    `  NO       = no matching evidence (use as default when unsure)\n` +
+    `  N/A      = completely insufficient data to judge\n\n` +
     `CLINICAL QUESTION: ${question}\n\n` +
     `PATIENTS:\n${rosterLines.join("\n")}\n\n` +
-    `JSON (one label per patient, nothing else):\n`;
+    `OUTPUT FORMAT (copy this exactly, replace labels only):\n` +
+    `{"${census[0].name}": "YES", "${census[1]?.name ?? census[0].name}": "NO"}\n\n` +
+    `FULL JSON RESPONSE (all ${census.length} patients, nothing else):`;
 
-  const result = await askSnowflakeCohortQuestion(prompt);
-  if (!result)
+  let raw: string;
+  try {
+    const result = await window.electronAPI.snowflake.classify(prompt);
+    if (!result.success || !result.answer)
+      return {
+        results: new Map(),
+        error: result.error ?? "Snowflake classify call failed",
+      };
+    raw = result.answer;
+  } catch (e: any) {
+    return {
+      results: new Map(),
+      error: e?.message ?? "Snowflake connection error",
+    };
+  }
+
+  // Robust JSON extraction — find the outermost { ... } even if model adds surrounding text
+  const extractJson = (text: string): string | null => {
+    // 1. Fenced code block
+    const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (fenced) return fenced[1].trim();
+    // 2. Find first { and last } — handles text before/after the JSON
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    if (start !== -1 && end > start) return text.slice(start, end + 1);
+    return null;
+  };
+
+  const jsonStr = extractJson(raw);
+  if (!jsonStr)
     return {
       results: new Map(),
       error:
-        "Snowflake unavailable — connect to Snowflake to use this feature.",
-    };
-
-  const raw = result.content;
-  const jsonMatch =
-    raw.match(/```(?:json)?\s*([\s\S]*?)```/) || raw.match(/(\{[\s\S]*\})/);
-  if (!jsonMatch)
-    return {
-      results: new Map(),
-      error: "Could not parse LLM response as JSON.",
+        "Could not parse LLM response as JSON. Try rephrasing the question.",
     };
 
   try {
-    const parsed: Record<string, string> = JSON.parse(
-      jsonMatch[1] ?? jsonMatch[0],
-    );
+    const parsed: Record<string, string> = JSON.parse(jsonStr);
 
     function normalizeLabel(v: string): string {
       const u = v.toUpperCase().trim();

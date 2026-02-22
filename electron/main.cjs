@@ -15,7 +15,10 @@ if (isDev) {
     require("dotenv").config({ path: envPath });
     console.log("[Main] Loaded bundled .env config.");
   } else {
-    console.warn("[Main] WARNING: No .env file found inside app bundle at", envPath);
+    console.warn(
+      "[Main] WARNING: No .env file found inside app bundle at",
+      envPath,
+    );
   }
 }
 
@@ -32,10 +35,12 @@ if (isDev) {
         allowJs: true,
         skipLibCheck: true,
         esModuleInterop: true,
-        resolveJsonModule: true
+        resolveJsonModule: true,
       },
     });
-    console.log("[Main] ts-node registered for development (CommonJS, Isolated)");
+    console.log(
+      "[Main] ts-node registered for development (CommonJS, Isolated)",
+    );
   } catch (err) {
     console.warn("[Main] Failed to register ts-node:", err.message);
   }
@@ -176,7 +181,10 @@ ipcMain.handle("snowflake:sync-patient", async (_event, patientId) => {
       return { success: false, error: "Backend services not available" };
     }
     const result = await services.syncOrchestrator.syncPatient(patientId);
-    console.log(`[Main] IPC: snowflake:sync-patient result:`, result.success ? "Success" : "Failed");
+    console.log(
+      `[Main] IPC: snowflake:sync-patient result:`,
+      result.success ? "Success" : "Failed",
+    );
     return result;
   } catch (err) {
     console.error(`[Main] IPC: snowflake:sync-patient error:`, err);
@@ -195,26 +203,46 @@ ipcMain.handle(
 
       // Route to cohort query if no patientId is provided
       if (!patientId) {
-        const result = await services.syncOrchestrator.askGlobalQuestion(question);
+        const result =
+          await services.syncOrchestrator.askGlobalQuestion(question);
         return { success: true, ...result };
       }
 
       const result = await services.syncOrchestrator.askQuestion(
         patientId,
         question,
-        encounterId
+        encounterId,
       );
       return { success: true, ...result };
     } catch (err) {
       // If Snowflake is unavailable, the renderer will fallback to mock
       return { success: false, error: err.message };
     }
-  }
+  },
 );
+
+// Direct CORTEX.COMPLETE call — used by smart column batch scoring so the
+// classification prompt is NOT wrapped in the clinical stored-proc system prompt.
+ipcMain.handle("snowflake:classify", async (_event, { prompt }) => {
+  try {
+    const services = await getBackendServices();
+    if (!services) return { success: false, error: "SNOWFLAKE_UNAVAILABLE" };
+    const rows = await services.snowflakeClient.executeSql(
+      `SELECT SNOWFLAKE.CORTEX.COMPLETE('mistral-7b', ?) AS answer`,
+      [prompt],
+    );
+    const answer = rows[0]?.ANSWER ?? rows[0]?.answer ?? "";
+    return { success: true, answer };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
 
 ipcMain.handle("snowflake:preseed-cohort", async (_event, patientIds) => {
   try {
-    console.log(`[Main] IPC: snowflake:preseed-cohort (${patientIds.length} patients)`);
+    console.log(
+      `[Main] IPC: snowflake:preseed-cohort (${patientIds.length} patients)`,
+    );
     const services = await getBackendServices();
     if (!services) {
       return { success: false, error: "Backend services not available" };

@@ -68,6 +68,12 @@ export interface ElectronAPI {
       available: boolean;
       reason?: string;
     }>;
+    /** Direct CORTEX.COMPLETE — returns raw model text with no stored-proc wrapping */
+    classify: (prompt: string) => Promise<{
+      success: boolean;
+      answer?: string;
+      error?: string;
+    }>;
   };
 }
 

@@ -16,6 +16,8 @@ export interface ColumnDef {
   visible: boolean;
   width?: string;
   render?: (patient: Patient) => React.ReactNode;
+  /** Optional sort accessor — used when the column data lives only in the render closure */
+  sortValue?: (patient: Patient) => string | number;
 }
 
 interface PatientTableProps {

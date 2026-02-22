@@ -175,6 +175,7 @@ DECLARE
     v_snapshot_at TIMESTAMP_NTZ;
     v_completeness VARIANT;
     v_search_results VARIANT;
+    v_search_query VARCHAR;
     v_prompt VARCHAR;
     v_answer VARCHAR;
     v_result VARIANT;
@@ -225,13 +226,35 @@ BEGIN
 
     v_patient_context := :v_patient_context || '\nLABS: ' || :v_labs_context;
 
-    -- Get search results from cortex search service
-    BEGIN
-        v_search_results := (SELECT SNOWFLAKE.CORTEX.SEARCH_PREVIEW('knowledge_search', :p_question, 3));
-    EXCEPTION
-        WHEN OTHER THEN
-            v_search_results := OBJECT_CONSTRUCT('results', ARRAY_CONSTRUCT());
-    END;
+    -- Extract the actual nurse question text for keyword matching
+    v_search_query := COALESCE(
+        NULLIF(TRIM(REGEXP_SUBSTR(:p_question, 'NURSE QUESTION:\s*(.+)', 1, 1, 'es', 1)), ''),
+        RIGHT(:p_question, 200)
+    );
+
+    -- Match KB docs where any meaningful word from the question appears in content or title
+    v_search_results := (
+        SELECT OBJECT_CONSTRUCT('results', COALESCE(ARRAY_AGG(
+            OBJECT_CONSTRUCT(
+                'source_title', source_title,
+                'category', category,
+                'policy_id', policy_id,
+                'content', content
+            )
+        ), ARRAY_CONSTRUCT()))
+        FROM (
+            SELECT DISTINCT kb.source_title, kb.category, kb.policy_id, kb.content
+            FROM knowledge_base kb,
+                 LATERAL STRTOK_SPLIT_TO_TABLE(:v_search_query, ' ') AS t
+            WHERE LENGTH(t.value) > 3
+              AND REGEXP_REPLACE(LOWER(t.value), '[^a-z0-9-]', '') != ''
+              AND (
+                  LOWER(kb.content) LIKE '%' || REGEXP_REPLACE(LOWER(t.value), '[^a-z0-9-]', '') || '%'
+                  OR LOWER(kb.source_title) LIKE '%' || REGEXP_REPLACE(LOWER(t.value), '[^a-z0-9-]', '') || '%'
+              )
+            LIMIT 5
+        )
+    );
 
     v_prompt :=
         'ROLE: Clinical decision support assistant embedded in a nurse-facing EHR dashboard. ' ||
@@ -285,6 +308,7 @@ DECLARE
     v_cohort_context VARCHAR;
     v_top_patients VARCHAR;
     v_search_results VARIANT;
+    v_search_query VARCHAR;
     v_prompt VARCHAR;
     v_answer VARCHAR;
 BEGIN
@@ -336,13 +360,35 @@ BEGIN
         QUALIFY rn <= 5
     );
 
-    -- Search protocols for relevant clinical context
-    BEGIN
-        v_search_results := (SELECT SNOWFLAKE.CORTEX.SEARCH_PREVIEW('knowledge_search', :p_question, 3));
-    EXCEPTION
-        WHEN OTHER THEN
-            v_search_results := OBJECT_CONSTRUCT('results', ARRAY_CONSTRUCT());
-    END;
+    -- Extract the actual nurse question text for keyword matching
+    v_search_query := COALESCE(
+        NULLIF(TRIM(REGEXP_SUBSTR(:p_question, 'NURSE QUESTION:\s*(.+)', 1, 1, 'es', 1)), ''),
+        RIGHT(:p_question, 200)
+    );
+
+    -- Match KB docs where any meaningful word from the question appears in content or title
+    v_search_results := (
+        SELECT OBJECT_CONSTRUCT('results', COALESCE(ARRAY_AGG(
+            OBJECT_CONSTRUCT(
+                'source_title', source_title,
+                'category', category,
+                'policy_id', policy_id,
+                'content', content
+            )
+        ), ARRAY_CONSTRUCT()))
+        FROM (
+            SELECT DISTINCT kb.source_title, kb.category, kb.policy_id, kb.content
+            FROM knowledge_base kb,
+                 LATERAL STRTOK_SPLIT_TO_TABLE(:v_search_query, ' ') AS t
+            WHERE LENGTH(t.value) > 3
+              AND REGEXP_REPLACE(LOWER(t.value), '[^a-z0-9-]', '') != ''
+              AND (
+                  LOWER(kb.content) LIKE '%' || REGEXP_REPLACE(LOWER(t.value), '[^a-z0-9-]', '') || '%'
+                  OR LOWER(kb.source_title) LIKE '%' || REGEXP_REPLACE(LOWER(t.value), '[^a-z0-9-]', '') || '%'
+              )
+            LIMIT 5
+        )
+    );
 
     v_prompt :=
         'ROLE: Charge nurse assistant providing unit-level clinical intelligence for active inpatient management. ' ||

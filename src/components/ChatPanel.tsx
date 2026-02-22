@@ -7,7 +7,6 @@ import {
   User,
   Loader2,
   Sparkles,
-  ExternalLink,
   BookOpen,
   ChevronDown,
   ChevronUp,
@@ -368,6 +367,7 @@ export default function ChatPanel({
 /** Collapsible citation block shown below assistant messages */
 function CitationBlock({ citations }: { citations: Citation[] }) {
   const [expanded, setExpanded] = useState(false);
+  const [openIdx, setOpenIdx] = useState<number | null>(null);
 
   return (
     <div className="space-y-1">
@@ -387,26 +387,34 @@ function CitationBlock({ citations }: { citations: Citation[] }) {
       {expanded && (
         <div className="space-y-1 rounded-lg border bg-muted/30 p-2">
           {citations.map((cite, i) => (
-            <a
-              key={i}
-              href={cite.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-start gap-2 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-muted group"
-            >
-              <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded bg-primary/10 text-[9px] font-bold text-primary mt-0.5">
-                {i + 1}
-              </span>
-              <div className="flex-1 min-w-0">
-                <span className="font-medium text-foreground group-hover:text-primary transition-colors">
-                  {cite.title}
+            <div key={i} className="rounded-md overflow-hidden">
+              <button
+                onClick={() => setOpenIdx(openIdx === i ? null : i)}
+                className="w-full flex items-start gap-2 px-2 py-1.5 text-xs transition-colors hover:bg-muted group text-left"
+              >
+                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded bg-primary/10 text-[9px] font-bold text-primary mt-0.5">
+                  {i + 1}
                 </span>
-                <span className="block text-[10px] text-muted-foreground truncate">
-                  {cite.source}
-                </span>
-              </div>
-              <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground/50 group-hover:text-primary mt-0.5" />
-            </a>
+                <div className="flex-1 min-w-0">
+                  <span className="font-medium text-foreground group-hover:text-primary transition-colors">
+                    {cite.title}
+                  </span>
+                  <span className="block text-[10px] text-muted-foreground truncate">
+                    {cite.source}
+                  </span>
+                </div>
+                {cite.content && (
+                  openIdx === i
+                    ? <ChevronUp className="h-3 w-3 shrink-0 text-muted-foreground/50 mt-0.5" />
+                    : <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground/50 mt-0.5" />
+                )}
+              </button>
+              {openIdx === i && cite.content && (
+                <div className="px-3 pb-2 pt-1 text-[11px] text-muted-foreground leading-relaxed border-t border-border/40 bg-muted/20">
+                  {cite.content}
+                </div>
+              )}
+            </div>
           ))}
         </div>
       )}
