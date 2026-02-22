@@ -1,5 +1,5 @@
 {
-  "name": "patient-analyst",
+  "name": "nursely",
   "version": "1.0.0",
   "private": true,
   "description": "Nurse-facing Patient Analyst desktop app",
@@ -9,11 +9,14 @@
     "build": "tsc && vite build",
     "electron:dev": "electron .",
     "preview": "vite preview",
-    "dist": "npm run build && electron-builder"
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:all": "npm run build && electron-builder -mw"
   },
   "build": {
-    "appId": "com.crimsoncode.patientanalyst",
-    "productName": "Patient Analyst",
+    "appId": "com.crimsoncode.nursely",
+    "productName": "Nursely",
     "directories": {
       "output": "release"
     },
