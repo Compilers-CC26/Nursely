@@ -403,11 +403,12 @@ function CitationBlock({ citations }: { citations: Citation[] }) {
                     {cite.source}
                   </span>
                 </div>
-                {cite.content && (
-                  openIdx === i
-                    ? <ChevronUp className="h-3 w-3 shrink-0 text-muted-foreground/50 mt-0.5" />
-                    : <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground/50 mt-0.5" />
-                )}
+                {cite.content &&
+                  (openIdx === i ? (
+                    <ChevronUp className="h-3 w-3 shrink-0 text-muted-foreground/50 mt-0.5" />
+                  ) : (
+                    <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground/50 mt-0.5" />
+                  ))}
               </button>
               {openIdx === i && cite.content && (
                 <div className="px-3 pb-2 pt-1 text-[11px] text-muted-foreground leading-relaxed border-t border-border/40 bg-muted/20">
