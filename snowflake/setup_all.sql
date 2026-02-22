@@ -198,8 +198,8 @@ BEGIN
         SELECT 3, 'MEDICATIONS: ' || COALESCE(LISTAGG(medication, ', '), 'None documented')
         FROM medications WHERE patient_id = :p_patient_id
         UNION ALL
-        SELECT 4, 'LATEST VITALS: HR=' || COALESCE(TO_VARCHAR(v.hr), '?') || ', BP=' || COALESCE(TO_VARCHAR(v.bp_sys), '?') || '/' || COALESCE(TO_VARCHAR(v.bp_dia), '?')
-        FROM (SELECT hr, bp_sys, bp_dia FROM vitals WHERE patient_id = :p_patient_id ORDER BY effective_dt DESC LIMIT 1) AS v
+        SELECT 4, 'LATEST VITALS: HR=' || COALESCE(TO_VARCHAR(v.hr), '?') || ', BP=' || COALESCE(TO_VARCHAR(v.bp_sys), '?') || '/' || COALESCE(TO_VARCHAR(v.bp_dia), '?') || ', Temp=' || COALESCE(TO_VARCHAR(v.temp), '?') || ', SpO2=' || COALESCE(TO_VARCHAR(v.spo2), '?')
+        FROM (SELECT hr, bp_sys, bp_dia, temp, spo2 FROM vitals WHERE patient_id = :p_patient_id AND (hr IS NOT NULL OR bp_sys IS NOT NULL OR temp IS NOT NULL OR spo2 IS NOT NULL) ORDER BY effective_dt DESC LIMIT 1) AS v
     );
 
     -- Get search results from cortex search service

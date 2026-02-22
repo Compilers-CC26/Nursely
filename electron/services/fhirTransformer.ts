@@ -274,6 +274,14 @@ function groupVitals(
     const dt = obs.effectiveDateTime ?? new Date().toISOString();
     // Round to nearest minute for grouping
     const roundedDt = dt.slice(0, 16) + ":00Z";
+
+    // Only process if it matches one of our primary vital codes or has components we want
+    const codings = obs.code?.coding ?? [];
+    const hasPrimaryCode = codings.some(c => VITAL_CODES.has(c.code ?? ""));
+    const hasBPPanel = codings.some(c => c.code === "85354-9");
+
+    if (!hasPrimaryCode && !hasBPPanel) continue;
+
     const existing = byTimestamp.get(roundedDt) ?? {
       vital_id: obs.id,
       patient_id: patientId,
@@ -290,7 +298,6 @@ function groupVitals(
       source_system: SOURCE_SYSTEM,
     };
 
-    const codings = obs.code?.coding ?? [];
     const value = obs.valueQuantity?.value;
 
     codings.forEach(c => {
@@ -304,7 +311,7 @@ function groupVitals(
     });
 
     // Blood pressure panel — extract systolic/diastolic from components if direct code missing
-    if (codings.some(c => c.code === "85354-9")) {
+    if (hasBPPanel) {
       const components = obs.component ?? [];
       for (const comp of components) {
         const compCodings = comp.code?.coding ?? [];
@@ -317,7 +324,11 @@ function groupVitals(
     byTimestamp.set(roundedDt, existing);
   }
 
-  return Array.from(byTimestamp.values()) as VitalRow[];
+  // Final pass: filter out any rows that somehow ended up with all primary vitals null
+  return Array.from(byTimestamp.values()).filter(v =>
+    v.hr !== null || v.bp_sys !== null || v.bp_dia !== null ||
+    v.rr !== null || v.temp !== null || v.spo2 !== null
+  ) as VitalRow[];
 }
 
 function transformNote(patientId: string, resource: FHIRResource): NoteRow {
