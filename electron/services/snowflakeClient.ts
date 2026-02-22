@@ -397,14 +397,21 @@ export async function getLastSyncTime(patientId: string): Promise<Date | null> {
 
 /**
  * Check if a patient was synced within a lookback window.
+ * Uses Snowflake TIMESTAMPDIFF to avoid Node timezone parsing skews.
  */
 export async function isPatientSyncedRecent(patientId: string, minutesThreshold = 10): Promise<boolean> {
-  const lastSync = await getLastSyncTime(patientId);
-  if (!lastSync) return false;
+  const rows = await executeSql(`
+    SELECT TIMESTAMPDIFF('minute', snapshot_at, CURRENT_TIMESTAMP()) as diff_minutes
+    FROM patient_snapshots
+    WHERE patient_id = ?
+    ORDER BY snapshot_at DESC
+    LIMIT 1
+  `, [patientId]);
 
-  const diffMs = Date.now() - lastSync.getTime();
-  const diffMin = diffMs / (1000 * 60);
-  return diffMin < minutesThreshold;
+  if (rows.length === 0) return false;
+
+  const diffMinutes = Number(rows[0].DIFF_MINUTES);
+  return diffMinutes < minutesThreshold;
 }
 
 /**
