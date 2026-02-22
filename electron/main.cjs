@@ -11,12 +11,18 @@ if (isDev) {
   try {
     require("ts-node").register({
       transpileOnly: true,
+      skipProject: true, // Ignore root tsconfig.json to avoid conflicts with Vite/frontend settings
       compilerOptions: {
         module: "CommonJS",
         target: "ESNext",
+        moduleResolution: "Node",
+        allowJs: true,
+        skipLibCheck: true,
+        esModuleInterop: true,
+        resolveJsonModule: true
       },
     });
-    console.log("[Main] ts-node registered for development");
+    console.log("[Main] ts-node registered for development (CommonJS, Isolated)");
   } catch (err) {
     console.warn("[Main] Failed to register ts-node:", err.message);
   }
@@ -51,26 +57,13 @@ async function getBackendServices() {
   if (backendServices) return backendServices;
 
   try {
-    let fhirClient, fhirTransformer, snowflakeClient, syncOrchestrator;
+    console.log("[Main] Loading backend services...");
 
-    // In development with ts-node, we can require .ts files
-    // In production, we require the compiled .js files
-    try {
-      fhirClient = require("./services/fhirClient");
-      fhirTransformer = require("./services/fhirTransformer");
-      snowflakeClient = require("./services/snowflakeClient");
-      syncOrchestrator = require("./services/syncOrchestrator");
-    } catch (e) {
-      if (isDev) {
-        // Explicitly try .ts extension if the default failed
-        fhirClient = require("./services/fhirClient.ts");
-        fhirTransformer = require("./services/fhirTransformer.ts");
-        snowflakeClient = require("./services/snowflakeClient.ts");
-        syncOrchestrator = require("./services/syncOrchestrator.ts");
-      } else {
-        throw e;
-      }
-    }
+    // With "type": "module" removed, standard require works with ts-node/register
+    const fhirClient = require("./services/fhirClient");
+    const fhirTransformer = require("./services/fhirTransformer");
+    const snowflakeClient = require("./services/snowflakeClient");
+    const syncOrchestrator = require("./services/syncOrchestrator");
 
     backendServices = {
       fhirClient,
@@ -79,9 +72,10 @@ async function getBackendServices() {
       syncOrchestrator,
     };
 
+    console.log("[Main] Backend services loaded successfully");
     return backendServices;
   } catch (err) {
-    console.warn("[Main] Backend services not available:", err.message);
+    console.error("[Main] Failed to load backend services:", err);
     return null;
   }
 }
@@ -129,13 +123,16 @@ ipcMain.handle("fhir:clear-cache", async () => {
 
 ipcMain.handle("snowflake:sync-patient", async (_event, patientId) => {
   try {
+    console.log(`[Main] IPC: snowflake:sync-patient ${patientId}`);
     const services = await getBackendServices();
     if (!services) {
       return { success: false, error: "Backend services not available" };
     }
     const result = await services.syncOrchestrator.syncPatient(patientId);
+    console.log(`[Main] IPC: snowflake:sync-patient result:`, result.success ? "Success" : "Failed");
     return result;
   } catch (err) {
+    console.error(`[Main] IPC: snowflake:sync-patient error:`, err);
     return { success: false, error: err.message };
   }
 });

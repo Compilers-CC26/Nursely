@@ -57,8 +57,9 @@ export async function fetchPatientBundle(
         entries.push({ resource, fullUrl: `${FHIR_BASE}/${resource.resourceType}/${resource.id}` });
       });
     } else if (result.status === "rejected") {
+      const error = result.reason;
       console.warn(
-        `[FHIR]   ${resourceTypes[i]}: fetch failed — ${result.reason}`
+        `[FHIR]   ${resourceTypes[i]}: fetch failed — ${error instanceof Error ? error.stack : error}`
       );
     }
   });

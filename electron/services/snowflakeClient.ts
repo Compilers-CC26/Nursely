@@ -174,7 +174,7 @@ export async function upsertPatientSnapshot(
   const snapshotId = `snap-${Date.now()}`;
   await executeSql(
     `INSERT INTO patient_snapshots (snapshot_id, patient_id, snapshot_at, lookback_hours, completeness_flags, resource_counts)
-     VALUES (?, ?, CURRENT_TIMESTAMP(), ?, PARSE_JSON(?), PARSE_JSON(?))`,
+     SELECT ?, ?, CURRENT_TIMESTAMP(), ?, PARSE_JSON(?), PARSE_JSON(?)`,
     [
       snapshotId,
       snapshot.patient?.patient_id ?? "",

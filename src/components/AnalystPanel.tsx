@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import type { Patient } from "@/types";
 import { generateSBAR, getAnalyticsResults } from "@/services/snowflakeMock";
+import { cn } from "@/lib/utils";
 
 interface AnalystPanelProps {
   selectedPatient: Patient | null;
@@ -75,14 +76,32 @@ export default function AnalystPanel({
   const [refinementQ1, setRefinementQ1] = useState("");
   const [refinementQ2, setRefinementQ2] = useState("");
 
+  // Sync state
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<{ success: boolean; rows?: number; error?: string } | null>(null);
+
   const sbar = useMemo(() => {
     if (!selectedPatient) return null;
     return generateSBAR(selectedPatient);
   }, [selectedPatient]);
 
-  // Reset SBAR display when patient changes
+  // Sync patient to Snowflake on selection
   React.useEffect(() => {
     setShowSBAR(false);
+    setSyncStatus(null);
+
+    if (selectedPatient) {
+      setIsSyncing(true);
+      import("@/services/fhirMock").then(({ syncPatientToSnowflake }) => {
+        syncPatientToSnowflake(selectedPatient.id)
+          .then((result) => {
+            if (result) {
+              setSyncStatus({ success: result.success, rows: result.rowsWritten, error: result.error });
+            }
+          })
+          .finally(() => setIsSyncing(false));
+      });
+    }
   }, [selectedPatient?.id]);
 
   const contextHeader = getContextHeader(searchQuery, selectedPatient);
@@ -125,6 +144,7 @@ export default function AnalystPanel({
               <button
                 onClick={() => onSwitchToChat(`Tell me more about: ${contextHeader}`)}
                 className="mt-2 flex items-center gap-1 text-xs text-primary/70 hover:text-primary transition-colors"
+                disabled={isSyncing}
               >
                 <MessageSquare className="h-3 w-3" />
                 Ask the assistant about this
@@ -132,6 +152,56 @@ export default function AnalystPanel({
               </button>
             )}
           </div>
+
+          {/* Snowflake Sync Status */}
+          {selectedPatient && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <h4 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">
+                  Snowflake Status
+                </h4>
+                {isSyncing && (
+                  <span className="flex items-center gap-1 text-[10px] font-medium text-amber-600 animate-pulse">
+                    <Activity className="h-2.5 w-2.5" />
+                    Syncing live data...
+                  </span>
+                )}
+              </div>
+
+              {!isSyncing && syncStatus && (
+                <div className={cn(
+                  "flex items-center gap-2 rounded-md border px-3 py-2 text-xs transition-all",
+                  syncStatus.success
+                    ? "bg-emerald-50/50 border-emerald-100 text-emerald-700"
+                    : "bg-rose-50/50 border-rose-100 text-rose-700"
+                )}>
+                  {syncStatus.success ? (
+                    <>
+                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                      <span>
+                        Synced to Snowflake ({syncStatus.rows} rows). Ready for RAG query.
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <Activity className="h-3.5 w-3.5 shrink-0" />
+                      <span>
+                        Sync failed: {syncStatus.error || "Connection error"}.
+                        <span className="opacity-70 ml-1">Current session using local fallbacks.</span>
+                      </span>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {!isSyncing && !syncStatus && (
+                <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground italic">
+                  <Activity className="h-3.5 w-3.5" />
+                  Select a patient to sync live clinical records.
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Agent actions checklist — context-aware */}
           <div className="space-y-2">
