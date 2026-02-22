@@ -513,12 +513,18 @@ function buildCensusRoster(census: Patient[]): string {
  * Generate a mock response based on the user message and optional patient context.
  * Returns content + citations for source attribution.
  */
+export interface GenerateResponseResult {
+  response: ChatResponse;
+  /** When the user names a patient not currently selected, this is that patient. */
+  matchedPatient?: Patient;
+}
+
 export async function generateResponse(
   message: string,
   _selectedPatient: Patient | null,
   _conversationHistory: ChatMessage[],
   _liveCensus: Patient[] = [],
-): Promise<ChatResponse> {
+): Promise<GenerateResponseResult> {
   const lower = message.toLowerCase();
 
   // Detect Global Intent: cohort-level or comparison questions
@@ -568,8 +574,26 @@ export async function generateResponse(
   // effectivePatient: explicit selection > named in message > null
   const effectivePatient = _selectedPatient ?? namedPatient;
 
+  // Did the chat detect a different patient than what's selected?
+  const didMatchNewPatient =
+    namedPatient != null && namedPatient.id !== _selectedPatient?.id;
+
   // Global if no patient can be resolved, OR explicit cohort keyword present
   const isGlobalIntent = !effectivePatient || hasCohortKeyword;
+
+  /** Wrap a ChatResponse with the matched patient info when applicable. */
+  function wrap(cr: ChatResponse): GenerateResponseResult {
+    if (didMatchNewPatient) {
+      return {
+        response: {
+          ...cr,
+          content: `*I pulled up **${namedPatient!.name}**'s chart for you.*\n\n${cr.content}`,
+        },
+        matchedPatient: namedPatient!,
+      };
+    }
+    return { response: cr };
+  }
 
   // ── Build live frontend context to inject into every LLM call ──
   // Snowflake tables are often stale or empty; the frontend data is always current.
@@ -617,7 +641,7 @@ export async function generateResponse(
         enrichedMessage = `${roster}\n\nNURSE QUESTION: ${enrichedMessage}`;
       }
       const gResult = await askSnowflakeCohortQuestion(enrichedMessage);
-      if (gResult) return gResult;
+      if (gResult) return wrap(gResult);
     } else if (effectivePatient) {
       // Inject live frontend data into the question so Cortex always has current values
       const liveContext = buildLivePatientContext(effectivePatient);
@@ -627,14 +651,14 @@ export async function generateResponse(
         enrichedQuestion,
       );
       if (sfResult) {
-        return {
+        return wrap({
           content: sfResult.answer,
           citations: sfResult.citations.map((c) => ({
             title: c.title,
             source: c.source,
             url: c.url,
           })),
-        };
+        });
       }
     }
   } catch {
@@ -678,7 +702,7 @@ export async function generateResponse(
       const topAbove = cohortSorted.filter(
         (p) => p.riskScore > _selectedPatient!.riskScore,
       ).length;
-      return {
+      return wrap({
         content:
           `**${_selectedPatient.name}** has a risk score of **${_selectedPatient.riskScore.toFixed(2)}**, ranking **#${rank} of ${total}** on the unit.\n` +
           `${topAbove} patient${topAbove !== 1 ? "s have" : " has"} a higher score. Unit average: ${unitAvg}.\n` +
@@ -689,14 +713,14 @@ export async function generateResponse(
         citations: [
           { title: "Live Census Analytics", source: "Live Census", url: "#" },
         ],
-      };
+      });
     }
 
     // General cohort question
     const withAbnormal = _liveCensus.filter((p) =>
       p.labs.some((l) => l.flag !== "normal"),
     ).length;
-    return {
+    return wrap({
       content:
         `**Unit Census — ${total} patients** *(AI offline — live data only)*\n\n` +
         `• High-risk (score > 0.80): **${highRisk}**\n` +
@@ -709,13 +733,13 @@ export async function generateResponse(
       citations: [
         { title: "Live Census Analytics", source: "Live Census", url: "#" },
       ],
-    };
+    });
   }
 
   // For single-patient questions, use the live frontend data directly
   if (effectivePatient) {
     const liveContext = buildLivePatientContext(effectivePatient);
-    return {
+    return wrap({
       content:
         `*AI assistant temporarily unavailable. Here is the current data on file for ${effectivePatient.name}:*\n\n` +
         liveContext
@@ -725,13 +749,13 @@ export async function generateResponse(
       citations: [
         { title: "EHR Record", source: "Live Patient Data", url: "#" },
       ],
-    };
+    });
   }
 
-  return {
+  return wrap({
     content: `AI assistant is temporarily unavailable. Please try again shortly or consult the EHR directly.`,
     citations: [],
-  };
+  });
 }
 
 /** Helper to generate dynamic, patient-aware responses based on actual passed data */

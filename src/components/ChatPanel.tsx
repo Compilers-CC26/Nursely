@@ -31,6 +31,8 @@ interface ChatPanelProps {
   onPendingMessageConsumed?: () => void;
   /** Called when the chat suggests updating the search/filter in the table */
   onSearchUpdate?: (query: string) => void;
+  /** Called when the chat detects a named patient to pull up their chart */
+  onSelectPatient?: (patient: Patient) => void;
 }
 
 export default function ChatPanel({
@@ -39,6 +41,7 @@ export default function ChatPanel({
   pendingMessage,
   onPendingMessageConsumed,
   onSearchUpdate,
+  onSelectPatient,
 }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -90,12 +93,16 @@ export default function ChatPanel({
       setIsLoading(true);
 
       try {
-        const response = await generateResponse(
+        const { response, matchedPatient } = await generateResponse(
           messageText.trim(),
           selectedPatient,
           messages,
           liveCensus,
         );
+
+        if (matchedPatient && onSelectPatient) {
+          onSelectPatient(matchedPatient);
+        }
 
         const assistantMsg: ChatMessage = {
           id: (Date.now() + 1).toString(),
@@ -120,7 +127,7 @@ export default function ChatPanel({
         inputRef.current?.focus();
       }
     },
-    [input, isLoading, selectedPatient, messages, liveCensus],
+    [input, isLoading, selectedPatient, messages, liveCensus, onSelectPatient],
   );
 
   // Handle pending message from Analyst panel — guard against double-fire

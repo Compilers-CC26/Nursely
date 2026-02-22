@@ -464,6 +464,7 @@ export default function App() {
                   pendingMessage={pendingChatMessage}
                   onPendingMessageConsumed={() => setPendingChatMessage(null)}
                   onSearchUpdate={handleSearchFromChat}
+                  onSelectPatient={handleSelectPatient}
                 />
               )}
             </div>
