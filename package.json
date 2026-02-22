@@ -8,7 +8,28 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "electron:dev": "electron .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "dist": "npm run build && electron-builder"
+  },
+  "build": {
+    "appId": "com.crimsoncode.patientanalyst",
+    "productName": "Patient Analyst",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json",
+      ".env"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg",
+      "hardenedRuntime": true
+    }
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.1.4",
@@ -31,6 +52,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "electron": "^33.3.1",
+    "electron-builder": "^26.8.1",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "ts-node": "^10.9.2",

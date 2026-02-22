@@ -1,10 +1,23 @@
 const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("path");
 
-// Load environment variables
-require("dotenv").config({ path: path.join(__dirname, "../.env") });
+const fs = require("fs");
 
 const isDev = !app.isPackaged;
+
+// Load environment variables based on environment
+if (isDev) {
+  require("dotenv").config({ path: path.join(__dirname, "../.env") });
+} else {
+  // In production, the .env file is bundled inside the app.asar package
+  const envPath = path.join(process.resourcesPath, "app.asar", ".env");
+  if (fs.existsSync(envPath)) {
+    require("dotenv").config({ path: envPath });
+    console.log("[Main] Loaded bundled .env config.");
+  } else {
+    console.warn("[Main] WARNING: No .env file found inside app bundle at", envPath);
+  }
+}
 
 // In development, enable loading TypeScript files directly
 if (isDev) {
