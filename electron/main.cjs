@@ -4,6 +4,24 @@ const path = require("path");
 // Load environment variables
 require("dotenv").config({ path: path.join(__dirname, "../.env") });
 
+const isDev = !app.isPackaged;
+
+// In development, enable loading TypeScript files directly
+if (isDev) {
+  try {
+    require("ts-node").register({
+      transpileOnly: true,
+      compilerOptions: {
+        module: "CommonJS",
+        target: "ESNext",
+      },
+    });
+    console.log("[Main] ts-node registered for development");
+  } catch (err) {
+    console.warn("[Main] Failed to register ts-node:", err.message);
+  }
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1400,
@@ -15,9 +33,6 @@ function createWindow() {
     },
   });
 
-  // In development, load the Vite dev server
-  // In production, load the built index.html
-  const isDev = !app.isPackaged;
   if (isDev) {
     const devUrl = process.env.VITE_DEV_SERVER_URL || "http://localhost:5173";
     win.loadURL(devUrl);
@@ -30,21 +45,32 @@ function createWindow() {
 // IPC Handlers — Backend bridge for renderer
 // ════════════════════════════════════════════════
 
-// Lazy-load backend services (TypeScript compiled at build time)
-// For development, these will be loaded from the compiled output
-// For now, we use a try/catch to gracefully handle missing compiled files
-
 let backendServices = null;
 
 async function getBackendServices() {
   if (backendServices) return backendServices;
 
   try {
-    // These will be available once the TypeScript backend is compiled
-    const fhirClient = require("./services/fhirClient");
-    const fhirTransformer = require("./services/fhirTransformer");
-    const snowflakeClient = require("./services/snowflakeClient");
-    const syncOrchestrator = require("./services/syncOrchestrator");
+    let fhirClient, fhirTransformer, snowflakeClient, syncOrchestrator;
+
+    // In development with ts-node, we can require .ts files
+    // In production, we require the compiled .js files
+    try {
+      fhirClient = require("./services/fhirClient");
+      fhirTransformer = require("./services/fhirTransformer");
+      snowflakeClient = require("./services/snowflakeClient");
+      syncOrchestrator = require("./services/syncOrchestrator");
+    } catch (e) {
+      if (isDev) {
+        // Explicitly try .ts extension if the default failed
+        fhirClient = require("./services/fhirClient.ts");
+        fhirTransformer = require("./services/fhirTransformer.ts");
+        snowflakeClient = require("./services/snowflakeClient.ts");
+        syncOrchestrator = require("./services/syncOrchestrator.ts");
+      } else {
+        throw e;
+      }
+    }
 
     backendServices = {
       fhirClient,
