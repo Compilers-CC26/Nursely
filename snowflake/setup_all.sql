@@ -349,27 +349,29 @@ BEGIN
         'You support the charge nurse in identifying priorities, patterns, and risks across the entire unit census.' || '\n' ||
 
         'RULES:\n' ||
-        '- Be concise and action-oriented. Use bullet points when listing patients or conditions.\n' ||
-        '- Lead with patient safety: flag high-risk patients and critical findings first.\n' ||
-        '- Use patient names when listing individuals. Do not use generic placeholders.\n' ||
+        '- Answer the specific question asked. Do not default to listing risk rankings unless the question explicitly asks for them.\n' ||
+        '- If asked about conditions, answer about conditions. If asked about medications, answer about medications. Match the answer to the question.\n' ||
+        '- Be concise. Use bullet points only when listing multiple discrete items.\n' ||
+        '- Use patient names when referring to individuals. Do not use generic placeholders.\n' ||
         '- Ground all answers in the unit data provided. Do not invent patient details.\n' ||
-        '- If census data is insufficient to answer, state what is missing.\n' ||
-        '- Prefix critical unit-level findings with ALERT:.\n' ||
-        '- Never diagnose. Recommend provider escalation for critical or deteriorating patients.\n' ||
-        '- Cite applicable protocols briefly when relevant.\n' ||
-        '- Close with a brief prioritization recommendation for the charge nurse.\n' ||
+        '- If the census data does not contain enough information to answer the question, say so explicitly.\n' ||
+        '- Prefix genuinely critical findings with ALERT: only when clinically warranted.\n' ||
+        '- Never diagnose. Recommend provider escalation when clinically indicated.\n' ||
+        '- Cite applicable protocols briefly when directly relevant.\n' ||
         '- This tool supports clinical judgment; it does not replace it.\n\n' ||
 
         'UNIT CENSUS:\n' || :v_cohort_context || '\n\n' ||
 
-        'TOP 5 HIGHEST-RISK PATIENTS:\n' || COALESCE(:v_top_patients, 'N/A') || '\n\n' ||
+        '--- RISK REFERENCE (use ONLY if the question is specifically about risk rankings or high-risk patients) ---\n' ||
+        COALESCE(:v_top_patients, 'N/A') || '\n' ||
+        '--- END RISK REFERENCE ---\n\n' ||
 
         'RELEVANT PROTOCOLS:\n' ||
         TO_VARCHAR(:v_search_results) || '\n\n' ||
 
         'QUESTION: ' || :p_question || '\n\n' ||
 
-        'RESPONSE (lead with the most critical findings first):';
+        'RESPONSE (answer the question above directly — do not recite risk rankings unless that is what was asked):';
 
     v_answer := (SELECT SNOWFLAKE.CORTEX.COMPLETE('llama3-8b', :v_prompt));
 

@@ -16,16 +16,56 @@ import nurselyLogo from "../assets/images/Nursely_Logo.svg";
 
 type RightPanelTab = "analyst" | "chat";
 
-// Default columns — matches screenshot layout
+// Default columns
 const DEFAULT_COLUMNS: ColumnDef[] = [
-  { key: "name", label: "Patient", visible: true, width: "w-[200px]" },
-  { key: "mrn", label: "MRN", visible: true, width: "w-[120px]" },
-  { key: "diagnosis", label: "Diagnosis", visible: true, width: "w-[160px]" },
-  { key: "summary", label: "Summary", visible: true },
-  { key: "riskScore", label: "Risk Score", visible: true, width: "w-[110px]" },
+  { key: "name", label: "Patient", visible: true, width: "w-[185px]" },
+  { key: "mrn", label: "MRN", visible: true, width: "w-[125px]" },
+  { key: "room", label: "Room", visible: true, width: "w-[85px]" },
+  {
+    key: "diagnosis",
+    label: "Diagnosis",
+    visible: true,
+    // flex-1 — takes all remaining width so text is never clipped
+    render: (p: Patient) => {
+      const dx = p.diagnosis;
+      const empty = !dx || /no active|unknown|undocumented/i.test(dx);
+      return empty ? (
+        <span className="text-muted-foreground/50 text-xs italic">
+          No conditions
+        </span>
+      ) : (
+        <span className="text-foreground">{dx}</span>
+      );
+    },
+  },
+  {
+    key: "riskScore",
+    label: "Risk Score",
+    visible: true,
+    width: "w-[105px]",
+    render: (p: Patient) => {
+      const s = p.riskScore;
+      const cls =
+        s > 0.65
+          ? "bg-red-50 text-red-700 border-red-200"
+          : s > 0.4
+            ? "bg-amber-50 text-amber-700 border-amber-200"
+            : "bg-emerald-50 text-emerald-700 border-emerald-200";
+      return (
+        <span
+          className={cn(
+            "inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold tabular-nums",
+            cls,
+          )}
+        >
+          {s.toFixed(3)}
+        </span>
+      );
+    },
+  },
+  { key: "summary", label: "Summary", visible: false },
   { key: "age", label: "Age", visible: false, width: "w-[70px]" },
   { key: "sex", label: "Sex", visible: false, width: "w-[60px]" },
-  { key: "room", label: "Room", visible: false, width: "w-[90px]" },
 ];
 
 function useDebounce<T>(value: T, delay: number): T {
@@ -264,9 +304,9 @@ export default function App() {
   return (
     <div className="flex h-screen flex-col bg-muted/30">
       {/* ═══ Header bar ═══ */}
-      <header className="flex items-center justify-between border-b bg-white px-6 py-6">
+      <header className="flex items-center justify-between border-b bg-white px-5 py-2.5">
         <div className="flex items-center gap-3">
-          <img src={nurselyLogo} alt="Nursely" className="h-14 mt-2 ml-4" />
+          <img src={nurselyLogo} alt="Nursely" className="h-9" />
           {censusStatus === "loading" ? (
             <Badge
               variant="outline"
@@ -315,8 +355,8 @@ export default function App() {
 
       {/* ═══ Main content: table + analyst panel ═══ */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Left pane — 70% bubbled card */}
-        <div className="w-[70%] p-6">
+        {/* Left pane */}
+        <div className="flex-1 min-w-0 p-4">
           <div className="relative h-full rounded-2xl border border-border/50 bg-card shadow-lg overflow-hidden">
             {/* Layer 1 — Table view */}
             <div
@@ -362,8 +402,8 @@ export default function App() {
           </div>
         </div>
 
-        {/* Right pane — 30% floating bubbled card */}
-        <div className="w-[28%] p-6">
+        {/* Right pane */}
+        <div className="w-[360px] shrink-0 p-4">
           <div className="flex h-full flex-col rounded-2xl border border-border/50 bg-card shadow-lg">
             {/* Tab bar */}
             <div className="flex border-b border-border/50 rounded-t-2xl overflow-hidden">

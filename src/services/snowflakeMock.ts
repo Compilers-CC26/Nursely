@@ -42,9 +42,30 @@ const MOCK_RESULT: SnowflakeResult = {
     {
       label: "Unit / Floor",
       options: [
-        "2A","2B","2C","2D","3A","3B","3C","3D",
-        "4A","4B","4C","4D","5A","5B","5C","5D",
-        "6A","6B","6C","6D","7A","7B","7C","7D",
+        "2A",
+        "2B",
+        "2C",
+        "2D",
+        "3A",
+        "3B",
+        "3C",
+        "3D",
+        "4A",
+        "4B",
+        "4C",
+        "4D",
+        "5A",
+        "5B",
+        "5C",
+        "5D",
+        "6A",
+        "6B",
+        "6C",
+        "6D",
+        "7A",
+        "7B",
+        "7C",
+        "7D",
       ],
     },
     {
@@ -86,7 +107,7 @@ export function getAnalyticsResults(): SnowflakeResult {
 export async function askSnowflakeQuestion(
   patientId: string,
   question: string,
-  encounterId?: string
+  encounterId?: string,
 ): Promise<{
   answer: string;
   citations: Array<{ title: string; source: string; url: string }>;
@@ -99,7 +120,7 @@ export async function askSnowflakeQuestion(
     const result = await window.electronAPI!.snowflake.query(
       patientId,
       question,
-      encounterId
+      encounterId,
     );
     if (result.success) {
       return {
@@ -113,35 +134,4 @@ export async function askSnowflakeQuestion(
   } catch {
     return null;
   }
-}
-
-/**
- * Generate SBAR (Situation, Background, Assessment, Recommendation)
- * for a given patient. In production, this would call Snowflake Cortex.
- */
-export function generateSBAR(patient: {
-  name: string;
-  age: number;
-  sex: string;
-  room: string;
-  diagnosis: string;
-  summary: string;
-  vitals: { hr: number; bpSys: number; bpDia: number; rr: number; temp: number; spo2: number };
-  labs: { name: string; value: string; unit: string; flag: string }[];
-  meds: string[];
-  allergies: string[];
-  notes: string[];
-  riskScore: number;
-}): { situation: string; background: string; assessment: string; recommendation: string } {
-  const abnormalLabs = patient.labs
-    .filter((l) => l.flag !== "normal")
-    .map((l) => `${l.name}: ${l.value} ${l.unit} (${l.flag})`)
-    .join("; ");
-
-  return {
-    situation: `${patient.name}, ${patient.age}yo ${patient.sex}, Room ${patient.room}. Admitted for ${patient.diagnosis}. ${patient.summary}`,
-    background: `Primary diagnosis: ${patient.diagnosis}. Current medications: ${patient.meds.join(", ") || "None"}. Allergies: ${patient.allergies.length > 0 ? patient.allergies.join(", ") : "NKDA"}. ${patient.notes.length > 0 ? "Recent notes: " + patient.notes[0] : ""}`,
-    assessment: `Vitals — HR: ${patient.vitals.hr}, BP: ${patient.vitals.bpSys}/${patient.vitals.bpDia}, RR: ${patient.vitals.rr}, Temp: ${patient.vitals.temp}°F, SpO2: ${patient.vitals.spo2}%. ${abnormalLabs ? "Abnormal labs: " + abnormalLabs + "." : "Labs within normal limits."} Risk Score: ${patient.riskScore.toFixed(2)}.`,
-    recommendation: `Continue current treatment plan. Reassess vitals in 2 hours. ${patient.riskScore > 0.8 ? "⚠️ High risk — consider escalation to rapid response or ICU consult." : "Monitor closely and reassess at next rounding."} Communicate findings to attending physician. Update care plan as needed.`,
-  };
 }

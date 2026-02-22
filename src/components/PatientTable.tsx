@@ -22,7 +22,7 @@ interface PatientTableProps {
   onSort: (key: string) => void;
 }
 
-const ROW_HEIGHT = 64;
+const ROW_HEIGHT = 52;
 
 export default function PatientTable({
   patients,
@@ -34,7 +34,10 @@ export default function PatientTable({
   onSort,
 }: PatientTableProps) {
   const parentRef = useRef<HTMLDivElement>(null);
-  const visibleCols = useMemo(() => columns.filter((c) => c.visible), [columns]);
+  const visibleCols = useMemo(
+    () => columns.filter((c) => c.visible),
+    [columns],
+  );
 
   const virtualizer = useVirtualizer({
     count: patients.length,
@@ -52,7 +55,9 @@ export default function PatientTable({
 
   const SortIcon = ({ colKey }: { colKey: string }) => {
     if (sortKey !== colKey)
-      return <ArrowUpDown className="ml-1 h-3.5 w-3.5 text-muted-foreground/50" />;
+      return (
+        <ArrowUpDown className="ml-1 h-3.5 w-3.5 text-muted-foreground/50" />
+      );
     return sortDir === "asc" ? (
       <ArrowUp className="ml-1 h-3.5 w-3.5 text-primary" />
     ) : (
@@ -61,7 +66,10 @@ export default function PatientTable({
   };
 
   return (
-    <div ref={parentRef} className="flex-1 overflow-auto rounded-lg border bg-white">
+    <div
+      ref={parentRef}
+      className="flex-1 overflow-auto rounded-lg border bg-white"
+    >
       {/* Sticky header */}
       <div className="sticky top-0 z-10 flex border-b bg-muted/40 backdrop-blur">
         {/* Row expand indicator column */}
@@ -72,7 +80,7 @@ export default function PatientTable({
             onClick={() => onSort(col.key)}
             className={cn(
               "flex items-center gap-0.5 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors",
-              col.width ?? "flex-1"
+              col.width ?? "flex-1",
             )}
           >
             {col.label}
@@ -83,7 +91,10 @@ export default function PatientTable({
 
       {/* Virtualized rows */}
       <div
-        style={{ height: `${virtualizer.getTotalSize()}px`, position: "relative" }}
+        style={{
+          height: `${virtualizer.getTotalSize()}px`,
+          position: "relative",
+        }}
       >
         {virtualizer.getVirtualItems().map((virtualRow) => {
           const patient = patients[virtualRow.index];
@@ -101,7 +112,7 @@ export default function PatientTable({
                 "absolute left-0 right-0 flex cursor-pointer items-center border-b transition-colors",
                 isSelected
                   ? "bg-primary/5 border-l-2 border-l-primary"
-                  : "hover:bg-muted/30"
+                  : "hover:bg-muted/30",
               )}
               style={{
                 height: `${virtualRow.size}px`,
@@ -113,7 +124,7 @@ export default function PatientTable({
                 <ChevronRight
                   className={cn(
                     "h-4 w-4 text-muted-foreground/40 transition-transform",
-                    isSelected && "rotate-90 text-primary"
+                    isSelected && "rotate-90 text-primary",
                   )}
                 />
               </div>
@@ -124,7 +135,6 @@ export default function PatientTable({
                     "truncate px-4 py-2 text-sm",
                     col.width ?? "flex-1",
                     col.key === "name" && "font-medium text-foreground",
-                    col.key === "riskScore" && "font-mono tabular-nums"
                   )}
                   title={String((patient as any)[col.key] ?? "")}
                 >
