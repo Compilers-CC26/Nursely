@@ -14,13 +14,14 @@ import {
   ArrowRight,
 } from "lucide-react";
 import type { Patient } from "@/types";
-import { generateSBAR, getAnalyticsResults } from "@/services/snowflakeMock";
+import { generateSBAR } from "@/services/snowflakeMock";
 import { cn } from "@/lib/utils";
 
 interface AnalystPanelProps {
   selectedPatient: Patient | null;
   searchQuery: string;
   onSwitchToChat: (message?: string) => void;
+  liveCensus: Patient[];
 }
 
 /** Generate a dynamic header based on current context */
@@ -70,8 +71,48 @@ export default function AnalystPanel({
   selectedPatient,
   searchQuery,
   onSwitchToChat,
+  liveCensus,
 }: AnalystPanelProps) {
-  const analytics = useMemo(() => getAnalyticsResults(), []);
+  const analytics = useMemo(() => {
+    if (!liveCensus || liveCensus.length === 0) {
+      return {
+        unitCount: 0,
+        topDiagnoses: ["None"],
+        alerts: ["No data loaded"],
+        unitOptions: [],
+        riskOptions: []
+      };
+    }
+
+    const units = new Set(liveCensus.map(p => p.room ? p.room.split('-')[0] : "Unknown"));
+    const diagCount: Record<string, number> = {};
+    liveCensus.forEach(p => {
+      diagCount[p.diagnosis] = (diagCount[p.diagnosis] || 0) + 1;
+    });
+    const topDiagnoses = Object.entries(diagCount)
+      .sort((a,b) => b[1]-a[1])
+      .slice(0, 3)
+      .map(e => e[0]);
+
+    const highRisk = liveCensus.filter(p => p.riskScore > 0.80).length;
+    const criticalLabs = liveCensus.filter(p => p.labs.some(l => l.flag !== "normal")).length;
+
+    return {
+      unitCount: units.size,
+      topDiagnoses: topDiagnoses.length ? topDiagnoses : ["None"],
+      alerts: [
+        `${highRisk} patients with Risk Score > 0.80`,
+        `${criticalLabs} patients with abnormal labs`
+      ],
+      unitOptions: Array.from(units).sort(),
+      riskOptions: [
+        "Critical (>0.85)",
+        "High (0.70–0.85)",
+        "Moderate (0.50–0.70)",
+        "Low (<0.50)",
+      ]
+    };
+  }, [liveCensus]);
   const [showSBAR, setShowSBAR] = useState(false);
   const [refinementQ1, setRefinementQ1] = useState("");
   const [refinementQ2, setRefinementQ2] = useState("");
@@ -219,13 +260,13 @@ export default function AnalystPanel({
               Cohort Summary
             </h4>
             <p className="text-sm leading-relaxed text-foreground/80">
-              Showing patients across {analytics.suggestedFilters[0]?.options.length ?? 0} units.
+              Showing patients across {analytics.unitCount} units.
               Top diagnoses include{" "}
-              {analytics.cohortSummary.topDiagnoses.slice(0, 3).join(", ")}.{" "}
-              {analytics.cohortSummary.alerts[0]}.
+              {analytics.topDiagnoses.join(", ")}.{" "}
+              {analytics.alerts[0]}.
             </p>
             <div className="flex flex-wrap gap-1.5 pt-1">
-              {analytics.cohortSummary.alerts.map((alert, i) => (
+              {analytics.alerts.map((alert, i) => (
                 <Badge key={i} variant="secondary" className="text-xs font-normal">
                   {alert}
                 </Badge>
@@ -249,13 +290,11 @@ export default function AnalystPanel({
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
               >
                 <option value="">Select...</option>
-                {analytics.suggestedFilters
-                  .find((f) => f.label === "Risk Category")
-                  ?.options.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
+                {analytics.riskOptions.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -269,13 +308,11 @@ export default function AnalystPanel({
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
               >
                 <option value="">All units</option>
-                {analytics.suggestedFilters
-                  .find((f) => f.label === "Unit / Floor")
-                  ?.options.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
+                {analytics.unitOptions.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
               </select>
             </div>
           </div>

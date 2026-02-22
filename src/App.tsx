@@ -287,6 +287,7 @@ export default function App() {
                   selectedPatient={selectedPatient}
                   searchQuery={debouncedQuery}
                   onSwitchToChat={switchToChat}
+                  liveCensus={liveCensus}
                 />
               </div>
             ) : (
