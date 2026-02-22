@@ -22,12 +22,19 @@ const SOURCE_SYSTEM = "SyntheaFHIR";
 // Observation codes that indicate vitals vs labs
 const VITAL_CODES = new Set([
   "8867-4", // Heart rate
+  "8893-0", // Heart rate (alternate)
+  "8889-8", // Heart rate by pulse oximetry
   "8480-6", // Systolic BP
   "8462-4", // Diastolic BP
   "9279-1", // Respiratory rate
   "8310-5", // Body temperature
+  "8331-1", // Oral temperature
   "2708-6", // SpO2
+  "59408-5", // SpO2 pulse oximetry
   "85354-9", // Blood pressure panel
+  "55284-4", // Blood pressure systolic and diastolic panel
+  "8716-3",  // Vital signs panel (general)
+  "85353-1", // Vital signs, weight, height, head circumference, oxygen saturation and BMI panel
 ]);
 
 /**
@@ -91,8 +98,12 @@ export function transformBundle(
     }
   }
 
-  const labs = rawLabs.map((r) => transformLab(patientId, r));
-  const vitals = groupVitals(patientId, rawVitals);
+  const labs = rawLabs
+    .map((r) => transformLab(patientId, r))
+    .sort((a, b) => new Date(b.effective_dt).getTime() - new Date(a.effective_dt).getTime());
+
+  const vitals = groupVitals(patientId, rawVitals)
+    .sort((a, b) => new Date(b.effective_dt).getTime() - new Date(a.effective_dt).getTime());
 
   const notes = (byType.get("DocumentReference") ?? []).map((r) =>
     transformNote(patientId, r)
@@ -259,15 +270,17 @@ function transformLab(patientId: string, resource: FHIRResource): LabRow {
 }
 
 /**
- * Group individual vital-sign Observations into single VitalRow records.
- * Groups by effective timestamp (rounded to nearest minute).
+ * Groups raw observations by timestamp (rounded to nearest minute) to create "vital rows".
+ * Synthea often records multiple vitals at the same effective time.
  */
-function groupVitals(
-  patientId: string,
-  observations: FHIRResource[]
-): VitalRow[] {
-  // Sort by time, then group by rounded timestamp
-  const byTimestamp = new Map<string, Partial<VitalRow>>();
+export function groupVitals(patientId: string, observations: FHIRResource[]): VitalRow[] {
+  const byTimestamp = new Map<string, any>();
+
+  const roundValue = (val: number | null | undefined, decimals = 0): number | null => {
+    if (val === null || val === undefined) return null;
+    const factor = Math.pow(10, decimals);
+    return Math.round(val * factor) / factor;
+  };
 
   for (const obs of observations) {
     const dt = obs.effectiveDateTime ?? new Date().toISOString();
@@ -277,7 +290,7 @@ function groupVitals(
     // Only process if it matches one of our primary vital codes or has components we want
     const codings = obs.code?.coding ?? [];
     const hasPrimaryCode = codings.some(c => VITAL_CODES.has(c.code ?? ""));
-    const hasBPPanel = codings.some(c => c.code === "85354-9");
+    const hasBPPanel = codings.some(c => c.code === "85354-9" || c.code === "55284-4");
 
     if (!hasPrimaryCode && !hasBPPanel) continue;
 
@@ -297,27 +310,26 @@ function groupVitals(
       source_system: SOURCE_SYSTEM,
     };
 
-    const value = obs.valueQuantity?.value;
+    const extractMeasurement = (codings: any[], value: number | null | undefined) => {
+      if (value === null || value === undefined) return;
+      codings.forEach(c => {
+        const code = c.code;
+        if (code === "8867-4" || code === "8893-0" || code === "8889-8") existing.hr = roundValue(value, 0);
+        else if (code === "8480-6") existing.bp_sys = roundValue(value, 0);
+        else if (code === "8462-4") existing.bp_dia = roundValue(value, 0);
+        else if (code === "9279-1") existing.rr = roundValue(value, 0);
+        else if (code === "8310-5" || code === "8331-1") existing.temp = roundValue(value, 1);
+        else if (code === "2708-6" || code === "59408-5") existing.spo2 = roundValue(value, 0);
+      });
+    };
 
-    codings.forEach(c => {
-      const code = c.code;
-      if (code === "8867-4") existing.hr = value ?? null;
-      else if (code === "8480-6") existing.bp_sys = value ?? null;
-      else if (code === "8462-4") existing.bp_dia = value ?? null;
-      else if (code === "9279-1") existing.rr = value ?? null;
-      else if (code === "8310-5") existing.temp = value ?? null;
-      else if (code === "2708-6") existing.spo2 = value ?? null;
-    });
+    // 1. Check top-level value
+    extractMeasurement(obs.code?.coding ?? [], obs.valueQuantity?.value);
 
-    // Blood pressure panel — extract systolic/diastolic from components if direct code missing
-    if (hasBPPanel) {
-      const components = obs.component ?? [];
-      for (const comp of components) {
-        const compCodings = comp.code?.coding ?? [];
-        const compValue = comp.valueQuantity?.value ?? null;
-        if (compCodings.some(cc => cc.code === "8480-6")) existing.bp_sys = compValue;
-        else if (compCodings.some(cc => cc.code === "8462-4")) existing.bp_dia = compValue;
-      }
+    // 2. Check components (crucial for panels like BP or Vital Signs Panel)
+    const components = obs.component ?? [];
+    for (const comp of components) {
+      extractMeasurement(comp.code?.coding ?? [], comp.valueQuantity?.value);
     }
 
     byTimestamp.set(roundedDt, existing);

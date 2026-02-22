@@ -219,6 +219,21 @@ export async function generateResponse(
   // Simulate network / LLM latency
   await new Promise((resolve) => setTimeout(resolve, 600 + Math.random() * 800));
 
+  const lower = message.toLowerCase();
+
+  // 1. Check for specific dynamic intents driven by AnalystPanel actions
+  if (_selectedPatient) {
+    if (lower.includes("vitals trends")) {
+      return generateDynamicResponse("vitals", _selectedPatient);
+    }
+    if (lower.includes("medication interactions")) {
+      return generateDynamicResponse("meds", _selectedPatient);
+    }
+    if (lower.includes("care recommendations")) {
+      return generateDynamicResponse("recs", _selectedPatient);
+    }
+  }
+
   const topic = matchTopic(message);
 
   if (topic && CLINICAL_RESPONSES[topic]) {
@@ -229,7 +244,6 @@ export async function generateResponse(
 
   // If a patient is selected and the question seems patient-specific
   if (_selectedPatient) {
-    const lower = message.toLowerCase();
     if (
       lower.includes("patient") ||
       lower.includes("this") ||
@@ -244,6 +258,93 @@ export async function generateResponse(
 
   const r = GENERAL_RESPONSES[msgCounter++ % GENERAL_RESPONSES.length];
   return { content: r.content, citations: r.citations };
+}
+
+/** Helper to generate dynamic, patient-aware responses based on actual passed data */
+function generateDynamicResponse(intent: "vitals" | "meds" | "recs", patient: Patient): TopicResponse {
+  if (intent === "vitals") {
+    let vitalsSummary = "**Recent Vitals Trends:**\n\n";
+    if (patient.vitals) {
+        vitalsSummary += `• **Heart Rate:** ${patient.vitals.hr || "--"} bpm\n`;
+        vitalsSummary += `• **Blood Pressure:** ${patient.vitals.bp_sys || "--"}/${patient.vitals.bp_dia || "--"} mmHg\n`;
+        vitalsSummary += `• **Resp Rate:** ${patient.vitals.rr || "--"} breaths/min\n`;
+        vitalsSummary += `• **Temperature:** ${patient.vitals.temp || "--"} °F\n`;
+        vitalsSummary += `• **SpO2:** ${patient.vitals.spo2 || "--"}%\n\n`;
+
+        const alerts = [];
+        if (patient.vitals.hr && (patient.vitals.hr > 100 || patient.vitals.hr < 60)) alerts.push("Abnormal Heart Rate");
+        if (patient.vitals.bp_sys && (patient.vitals.bp_sys > 140 || patient.vitals.bp_sys < 90)) alerts.push("Abnormal Blood Pressure");
+        if (patient.vitals.spo2 && patient.vitals.spo2 < 92) alerts.push("Low Oxygen Saturation");
+        if (patient.vitals.temp && patient.vitals.temp > 100.4) alerts.push("Elevated Temperature");
+
+        if (alerts.length > 0) {
+            vitalsSummary += `🚨 **Alerts detected:** ${alerts.join(", ")}. Recommend continuous telemetry monitoring and provider notification if persistent.`;
+        } else {
+            vitalsSummary += "✅ Vitals appear stable and within typical ranges. Recommend routine monitoring per unit protocol.";
+        }
+    } else {
+        vitalsSummary = "No recent vitals available for this patient.";
+    }
+
+    return {
+      content: vitalsSummary,
+      citations: [{ title: "Patient Vitals Flowsheet", source: "Local EHR Data", url: "#" }]
+    };
+  }
+
+  if (intent === "meds") {
+    let medsSummary = "**Medication Review:**\n\n";
+    if (patient.meds && patient.meds.length > 0) {
+      medsSummary += `Patient is currently on **${patient.meds.length} active medications**.\n\n`;
+      const highAlertKeywords = ["insulin", "heparin", "warfarin", "morphine", "oxycodone", "fentanyl", "propofol", "amiodarone"];
+      const foundHighAlert = patient.meds.filter(m => highAlertKeywords.some(k => m.toLowerCase().includes(k)));
+
+      if (foundHighAlert.length > 0) {
+        medsSummary += `🚨 **High-Alert Medications Found:**\n`;
+        foundHighAlert.forEach(m => { medsSummary += `• ${m}\n`; });
+        medsSummary += `\n*Action:* Double-check dosage and parameters before administration. Ensure independent double-verification if required by policy.\n`;
+      } else {
+        medsSummary += `✅ No standard high-alert medications match in the current list. Always perform the 5 Rights of Medication Administration.\n`;
+      }
+    } else {
+      medsSummary = "No active medications found in the current record.";
+    }
+
+    return {
+      content: medsSummary,
+      citations: [
+        { title: "Current MAR", source: "Local EHR Data", url: "#" },
+        { title: "High-Alert Medications", source: "ISMP", url: "https://www.ismp.org/recommendations/high-alert-medications-acute-list" }
+      ]
+    };
+  }
+
+  if (intent === "recs") {
+    let recs = `**Nursing Care Recommendations for ${patient.name}**\n\n`;
+    recs += `**Primary Diagnosis:** ${patient.diagnosis}\n\n`;
+    recs += "**Priority Interventions:**\n";
+    recs += "1. **Assess:** Perform comprehensive primary assessment focusing on symptomatic relief.\n";
+    recs += "2. **Monitor:** Trending vitals q4h and escalating parameters outside baseline.\n";
+
+    const abnormalLabs = patient.labs.filter(l => l.flag !== "normal");
+    if (abnormalLabs.length > 0) {
+        recs += `3. **Lab Follow-Up:** Monitor specifically for changes in: **${abnormalLabs.map(l => l.name).join(", ")}** as these are currently flagged abnormal.\n`;
+    } else {
+        recs += "3. **Lab Follow-Up:** Routine morning draws. No critical values currently flagged.\n";
+    }
+
+    recs += "4. **Education:** Review care plan and discharge criteria with patient/family.\n\n";
+    recs += "*Note: Recommendations generated dynamically. Always rely on clinical judgment and standing orders.*";
+
+    return {
+      content: recs,
+      citations: [
+        { title: "Clinical Care Pathways", source: "Hospital Policies", url: "#" }
+      ]
+    };
+  }
+
+  return GENERAL_RESPONSES[0];
 }
 
 

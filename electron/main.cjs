@@ -123,16 +123,34 @@ ipcMain.handle("fhir:fetch-patient-list", async (_event, count) => {
   }
 });
 
-ipcMain.handle("fhir:get-census", async () => {
+ipcMain.handle("fhir:get-census", async (event) => {
   try {
     const services = await getBackendServices();
     if (!services) {
       return { success: false, error: "Backend services not available" };
     }
-    const census = await services.censusService.getCensus();
+
+    // Pass a callback that sends individual patients to the UI as they are discovered/transformed
+    const census = await services.censusService.getCensus(false, (patient) => {
+      event.sender.send("fhir:on-patient-update", patient);
+    });
+
     return { success: true, census };
   } catch (err) {
     console.error("[Main] IPC: fhir:get-census error:", err);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle("fhir:get-patient", async (_event, patientId) => {
+  try {
+    const services = await getBackendServices();
+    if (!services) {
+      return { success: false, error: "Backend services not available" };
+    }
+    const patient = await services.censusService.getPatientById(patientId);
+    return { success: true, patient };
+  } catch (err) {
     return { success: false, error: err.message };
   }
 });

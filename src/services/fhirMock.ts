@@ -24,6 +24,22 @@ export function searchPatients(query: string): Patient[] {
 }
 
 /**
+ * Fetch a single detailed patient record (vitals, labs, etc) from the BFF.
+ */
+export async function getPatientDetail(patientId: string): Promise<Patient | null> {
+  if (!hasElectronAPI()) return null;
+
+  try {
+    const result = await window.electronAPI!.fhir.getPatient(patientId);
+    if (result.success) return result.patient;
+    return null;
+  } catch (err) {
+    console.warn("[FHIR Service] Failed to get patient details:", err);
+    return null;
+  }
+}
+
+/**
  * Sync a patient to Snowflake via Electron IPC.
  * Fetches FHIR Bundle → transforms → upserts.
  * Returns sync result or null if not in Electron.

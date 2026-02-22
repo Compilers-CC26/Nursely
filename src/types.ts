@@ -4,12 +4,12 @@
  */
 
 export interface Vitals {
-  hr: number;
-  bpSys: number;
-  bpDia: number;
-  rr: number;
-  temp: number;
-  spo2: number;
+  hr: number | null;
+  bpSys: number | null;
+  bpDia: number | null;
+  rr: number | null;
+  temp: number | null;
+  spo2: number | null;
   timestamp: string;
 }
 
@@ -40,11 +40,11 @@ export interface Patient {
 export interface CohortSummary {
   topDiagnoses: string[];
   avgVitals: {
-    hr: number;
-    bpSys: number;
-    bpDia: number;
-    temp: number;
-    spo2: number;
+    hr: number | null;
+    bpSys: number | null;
+    bpDia: number | null;
+    temp: number | null;
+    spo2: number | null;
   };
   alerts: string[];
 }

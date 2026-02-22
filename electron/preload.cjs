@@ -19,6 +19,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
     /** Get the dynamically built rich in-memory census */
     getCensus: () => ipcRenderer.invoke("fhir:get-census"),
 
+    /** Listener for progressive patient updates */
+    onPatientUpdate: (callback) => {
+      const wrappedCallback = (_event, patient) => callback(patient);
+      ipcRenderer.on("fhir:on-patient-update", wrappedCallback);
+      return () => ipcRenderer.removeListener("fhir:on-patient-update", wrappedCallback);
+    },
+
     /** Clear the FHIR session cache */
     clearCache: () => ipcRenderer.invoke("fhir:clear-cache"),
   },

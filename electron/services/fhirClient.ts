@@ -89,34 +89,47 @@ async function fetchResources(
   // Use clinical/standard URL format
   const url = resourceType === "Patient"
     ? `${FHIR_BASE}/Patient/${patientId}`
-    : `${FHIR_BASE}/${resourceType}?${paramName}=${patientId}&_count=100`;
+    : `${FHIR_BASE}/${resourceType}?${paramName}=${patientId}&_count=100&_sort=-date`;
 
-  try {
-    const response = await fetch(url, {
-      headers: {
-        Accept: "application/fhir+json",
-        "User-Agent": "PatientAnalyst/1.0.0 (Electron; ClinicalAssistant)"
-      },
-    });
+  return fetchWithRetry(url);
+}
 
-    if (!response.ok) {
-      console.warn(`[FHIR] Fetch failed for ${resourceType} (${response.status}).`);
-      return [];
+/**
+ * Fetch with basic retry logic for flaky sandboxes.
+ */
+async function fetchWithRetry(url: string, retries = 3, backoff = 1000): Promise<FHIRResource[]> {
+    for (let i = 0; i < retries; i++) {
+        try {
+            const response = await fetch(url, {
+                headers: {
+                    Accept: "application/fhir+json",
+                    "User-Agent": "PatientAnalyst/1.0.0 (Electron; ClinicalAssistant)"
+                },
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                if (data.resourceType === "Bundle") {
+                    return data.entry?.map((e: any) => e.resource) ?? [];
+                }
+                return [data];
+            }
+
+            if (response.status >= 500) {
+                console.warn(`[FHIR] Server error ${response.status} for ${url}. Retry ${i+1}/${retries}...`);
+                await new Promise(resolve => setTimeout(resolve, backoff * (i + 1)));
+                continue;
+            }
+
+            // For client errors (4xx) or other non-retryable issues, just return empty
+            return [];
+        } catch (err) {
+            console.error(`[FHIR] Network error for ${url}: ${err}. Retry ${i+1}/${retries}...`);
+            await new Promise(resolve => setTimeout(resolve, backoff * (i + 1)));
+        }
     }
-
-    const data = await response.json();
-
-    if (data.resourceType === "Bundle" && data.entry) {
-      return data.entry.map((e: any) => e.resource);
-    } else if (data.resourceType === resourceType) {
-      return [data];
-    }
-
+    // If all retries fail
     return [];
-  } catch (err) {
-    console.warn(`[FHIR] Network error for ${resourceType}:`, err);
-    return [];
-  }
 }
 
 /**
@@ -124,20 +137,40 @@ async function fetchResources(
  * Used for the initial patient table when no local seed is available.
  */
 export async function fetchPatientList(
-  count = 20
-): Promise<FHIRResource[]> {
-  const url = `${FHIR_BASE}/Patient?_count=${count}&_sort=-_lastUpdated`;
+    count = 20
+  ): Promise<FHIRResource[]> {
+    let url = `${FHIR_BASE}/Patient?_count=${count}&_sort=-_lastUpdated`;
+    const collected: FHIRResource[] = [];
 
-  const response = await fetch(url, {
-    headers: { Accept: "application/fhir+json" },
-  });
+    while (collected.length < count && url) {
+      const response = await fetch(url, {
+        headers: { Accept: "application/fhir+json" },
+      });
 
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const entries = data.entry?.map((e: any) => e.resource) ?? [];
+      collected.push(...entries);
+
+      // Check for a 'next' link to paginate
+      const nextLink = data.link?.find((l: any) => l.relation === "next");
+      url = nextLink ? nextLink.url : null;
+    }
+
+    return collected.slice(0, count);
   }
 
-  const data = await response.json();
-  return data.entry?.map((e: any) => e.resource) ?? [];
+/**
+ * Fetch a single patient resource directly (demographics + meta only).
+ * Used for sync intelligence pre-checks.
+ */
+export async function fetchPatientMetadata(patientId: string): Promise<FHIRResource | null> {
+    const url = `${FHIR_BASE}/Patient/${patientId}`;
+    const results = await fetchWithRetry(url);
+    return results[0] ?? null;
 }
 
 /**

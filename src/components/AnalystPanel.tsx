@@ -22,6 +22,7 @@ interface AnalystPanelProps {
   searchQuery: string;
   onSwitchToChat: (message?: string) => void;
   liveCensus: Patient[];
+  onSyncComplete?: (patientId: string) => void;
 }
 
 /** Generate a dynamic header based on current context */
@@ -41,29 +42,29 @@ function getContextHeader(
   return "Explore your patient cohort";
 }
 
-/** Generate context-aware agent actions */
 function getAgentActions(
   searchQuery: string,
   selectedPatient: Patient | null
 ) {
   if (selectedPatient) {
+    const firstName = selectedPatient.name.split(" ")[0];
     return [
-      { icon: Activity, label: `Extract vitals trends for ${selectedPatient.name.split(" ")[0]}`, done: true },
-      { icon: PenLine, label: "Review medication interactions", done: true },
-      { icon: ClipboardList, label: "Generate care recommendations", done: true },
+      { icon: Activity, label: `Extract vitals trends for ${firstName}`, prompt: `Can you extract and analyze the recent vitals trends for ${selectedPatient.name}?` },
+      { icon: PenLine, label: "Review medication interactions", prompt: `Are there any severe medication interactions I should be aware of for ${selectedPatient.name} based on their current MAR?` },
+      { icon: ClipboardList, label: "Generate care recommendations", prompt: `What are the top nursing care recommendations based on ${selectedPatient.name}'s current diagnosis and labs?` },
     ];
   }
   if (searchQuery) {
     return [
-      { icon: Activity, label: `Filter cohort by "${searchQuery}"`, done: true },
-      { icon: PenLine, label: "Rank by risk score", done: true },
-      { icon: ClipboardList, label: "Identify high-priority alerts", done: true },
+      { icon: Activity, label: `Filter cohort by "${searchQuery}"`, prompt: `Help me analyze the cohort of patients matching "${searchQuery}".` },
+      { icon: PenLine, label: "Rank by risk score", prompt: `Can you sort the current cohort by risk score and highlight the most critical patients?` },
+      { icon: ClipboardList, label: "Identify high-priority alerts", prompt: `Are there any high-priority alerts or critical lab values in the current patient list I need to address?` },
     ];
   }
   return [
-    { icon: Activity, label: "Extract vitals trends", done: true },
-    { icon: PenLine, label: "Rewrite query", done: true },
-    { icon: ClipboardList, label: "Suggest order sets", done: true },
+    { icon: Activity, label: "Understand risk scoring", prompt: "How is the patient risk score calculated and what factors are most heavily weighted?" },
+    { icon: PenLine, label: "Search tips", prompt: "What are some effective ways to search and filter the patient table?" },
+    { icon: ClipboardList, label: "General unit overview", prompt: "Can you give me a general overview of the clinical status of the unit based on the current cohort?" },
   ];
 }
 
@@ -72,6 +73,7 @@ export default function AnalystPanel({
   searchQuery,
   onSwitchToChat,
   liveCensus,
+  onSyncComplete,
 }: AnalystPanelProps) {
   const analytics = useMemo(() => {
     if (!liveCensus || liveCensus.length === 0) {
@@ -138,12 +140,15 @@ export default function AnalystPanel({
           .then((result) => {
             if (result) {
               setSyncStatus({ success: result.success, rows: result.rowsWritten, error: result.error });
+              if (result.success && onSyncComplete) {
+                onSyncComplete(selectedPatient.id);
+              }
             }
           })
           .finally(() => setIsSyncing(false));
       });
     }
-  }, [selectedPatient?.id]);
+  }, [selectedPatient?.id, onSyncComplete]);
 
   const contextHeader = getContextHeader(searchQuery, selectedPatient);
   const agentActions = getAgentActions(searchQuery, selectedPatient);
@@ -247,10 +252,23 @@ export default function AnalystPanel({
           {/* Agent actions checklist — context-aware */}
           <div className="space-y-2">
             {agentActions.map((action) => (
-              <div key={action.label} className="flex items-center gap-2.5">
-                <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
-                <span className="text-sm text-muted-foreground">{action.label}</span>
-              </div>
+              <button
+                key={action.label}
+                onClick={() => action.prompt && onSwitchToChat(action.prompt)}
+                className="w-full flex items-center justify-between gap-2.5 rounded-lg border border-border/50 bg-background px-3 py-2.5 text-left hover:bg-muted hover:border-border transition-colors group"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/10">
+                    <action.icon className="h-3.5 w-3.5 text-primary/70 group-hover:text-primary transition-colors" />
+                  </div>
+                  <span className="text-[13px] font-medium text-foreground/80 group-hover:text-foreground transition-colors truncate">
+                    {action.label}
+                  </span>
+                </div>
+                {action.prompt && (
+                  <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40 group-hover:text-primary transition-colors" />
+                )}
+              </button>
             ))}
           </div>
 

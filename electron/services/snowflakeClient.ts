@@ -18,6 +18,9 @@ import type {
   VitalRow,
   NoteRow,
 } from "./fhirTypes";
+import type { Patient, Vitals, Lab } from "../../src/types";
+
+const SOURCE_SYSTEM = "SyntheaFHIR";
 
 // ── Connection config ──
 
@@ -396,6 +399,22 @@ export async function getLastSyncTime(patientId: string): Promise<Date | null> {
 }
 
 /**
+ * Get the FHIR meta.lastUpdated timestamp stored in Snowflake for a patient.
+ * Useful for comparing against live API to detect changes.
+ */
+export async function getPatientSyncMetadata(patientId: string): Promise<{ fhirLastUpdated: string | null }> {
+  const rows = await executeSql(`
+    SELECT fhir_last_updated
+    FROM patients
+    WHERE patient_id = ?
+    LIMIT 1
+  `, [patientId]);
+
+  if (rows.length === 0) return { fhirLastUpdated: null };
+  return { fhirLastUpdated: rows[0].FHIR_LAST_UPDATED ?? null };
+}
+
+/**
  * Check if a patient was synced within a lookback window.
  * Uses Snowflake TIMESTAMPDIFF to avoid Node timezone parsing skews.
  */
@@ -422,19 +441,18 @@ export async function getCensusFromSnowflake(): Promise<any[]> {
   const sql = `
     SELECT
       p.patient_id, p.name, p.age, p.sex, p.room, p.mrn, p.diagnosis, p.summary, p.risk_score,
-      v.vitals_obj AS vitals,
+      v.vitals_arr AS vitals_arr,
       l.labs_arr AS labs,
       m.meds_arr AS meds,
       a.allergies_arr AS allergies,
       n.notes_arr AS notes
     FROM patients p
     LEFT JOIN (
-      SELECT patient_id,
-        OBJECT_CONSTRUCT(
-          'hr', hr, 'bpSys', bp_sys, 'bpDia', bp_dia, 'rr', rr, 'temp', temp, 'spo2', spo2, 'timestamp', effective_dt
-        ) AS vitals_obj
+      SELECT patient_id, ARRAY_AGG(OBJECT_CONSTRUCT(
+        'hr', hr, 'bp_sys', bp_sys, 'bp_dia', bp_dia, 'rr', rr, 'temp', temp, 'spo2', spo2, 'timestamp', effective_dt
+      )) WITHIN GROUP (ORDER BY effective_dt DESC) AS vitals_arr
       FROM vitals
-      QUALIFY ROW_NUMBER() OVER(PARTITION BY patient_id ORDER BY effective_dt DESC NULLS LAST) = 1
+      GROUP BY patient_id
     ) v ON v.patient_id = p.patient_id
     LEFT JOIN (
       SELECT patient_id, ARRAY_AGG(OBJECT_CONSTRUCT(
@@ -467,7 +485,161 @@ export async function getCensusFromSnowflake(): Promise<any[]> {
 
   const rows = await executeSql(sql);
 
-  return rows.map(r => ({
+  return rows.map(r => {
+    // Parse vitals array and scan for latest non-null
+    let latestVitals = { hr: null, bpSys: null, bpDia: null, rr: null, temp: null, spo2: null, timestamp: "2026-01-01T00:00:00.000Z" };
+    if (r.VITALS_ARR) {
+      const parsed = typeof r.VITALS_ARR === 'string' ? JSON.parse(r.VITALS_ARR) : r.VITALS_ARR;
+      for (const v of parsed) {
+        if (!v) continue;
+
+        const getV = (key: string): number | null => {
+          // Check lowercase, then Check uppercase (Snowflake default)
+          const val = v[key] !== undefined ? v[key] : v[key.toUpperCase()];
+          return (val === null || val === undefined) ? null : Number(val);
+        };
+
+        const hr = getV("hr");
+        if (latestVitals.hr === null && hr !== null) latestVitals.hr = hr;
+
+        const bpSys = getV("bp_sys");
+        if (latestVitals.bpSys === null && bpSys !== null) latestVitals.bpSys = bpSys;
+
+        const bpDia = getV("bp_dia");
+        if (latestVitals.bpDia === null && bpDia !== null) latestVitals.bpDia = bpDia;
+
+        const rr = getV("rr");
+        if (latestVitals.rr === null && rr !== null) latestVitals.rr = rr;
+
+        const temp = getV("temp");
+        if (latestVitals.temp === null && temp !== null) {
+          latestVitals.temp = temp < 50 ? parseFloat((temp * 9 / 5 + 32).toFixed(1)) : temp;
+        }
+
+        const spo2 = getV("spo2");
+        if (latestVitals.spo2 === null && spo2 !== null) latestVitals.spo2 = spo2;
+
+        if (latestVitals.timestamp.startsWith("2026") && (hr !== null || bpSys !== null || rr !== null || temp !== null || spo2 !== null)) {
+            latestVitals.timestamp = v.timestamp || v.TIMESTAMP || latestVitals.timestamp;
+        }
+      }
+    }
+
+    return {
+      id: r.PATIENT_ID,
+      name: r.NAME,
+      age: r.AGE,
+      sex: r.SEX,
+      room: r.ROOM,
+      mrn: r.MRN,
+      diagnosis: r.DIAGNOSIS,
+      summary: r.SUMMARY,
+      riskScore: r.RISK_SCORE ?? 0,
+      vitals: latestVitals,
+      labs: r.LABS ? (typeof r.LABS === 'string' ? JSON.parse(r.LABS) : r.LABS) : [],
+      meds: r.MEDS ? (typeof r.MEDS === 'string' ? JSON.parse(r.MEDS) : r.MEDS) : [],
+      allergies: r.ALLERGIES ? (typeof r.ALLERGIES === 'string' ? JSON.parse(r.ALLERGIES) : r.ALLERGIES) : [],
+      notes: r.NOTES ? (typeof r.NOTES === 'string' ? JSON.parse(r.NOTES) : r.NOTES) : []
+    };
+  });
+}
+
+/**
+ * Retrieve a single patient's details from Snowflake, including vitals, labs, meds, allergies, and notes.
+ */
+export async function getPatientFromSnowflake(patientId: string): Promise<any | null> {
+  const sql = `
+    SELECT
+      p.patient_id, p.name, p.age, p.sex, p.room, p.mrn, p.diagnosis, p.summary, p.risk_score,
+      v.vitals_arr AS vitals_arr,
+      l.labs_arr AS labs,
+      m.meds_arr AS meds,
+      a.allergies_arr AS allergies,
+      n.notes_arr AS notes
+    FROM patients p
+    LEFT JOIN (
+      SELECT patient_id, ARRAY_AGG(OBJECT_CONSTRUCT(
+        'hr', hr, 'bp_sys', bp_sys, 'bp_dia', bp_dia, 'rr', rr, 'temp', temp, 'spo2', spo2, 'timestamp', effective_dt
+      )) WITHIN GROUP (ORDER BY effective_dt DESC) AS vitals_arr
+      FROM vitals
+      WHERE patient_id = ?
+      GROUP BY patient_id
+    ) v ON v.patient_id = p.patient_id
+    LEFT JOIN (
+      SELECT patient_id, ARRAY_AGG(OBJECT_CONSTRUCT(
+        'name', lab_name, 'value', value, 'unit', unit, 'flag', flag
+      )) AS labs_arr
+      FROM (
+        SELECT patient_id, lab_name, value, unit, flag, effective_dt
+        FROM lab_results
+        WHERE patient_id = ?
+        QUALIFY ROW_NUMBER() OVER(PARTITION BY patient_id ORDER BY effective_dt DESC) <= 5
+      )
+      GROUP BY patient_id
+    ) l ON l.patient_id = p.patient_id
+    LEFT JOIN (
+      SELECT patient_id, ARRAY_AGG(medication) AS meds_arr
+      FROM medications
+      WHERE patient_id = ?
+      GROUP BY patient_id
+    ) m ON m.patient_id = p.patient_id
+    LEFT JOIN (
+      SELECT patient_id, ARRAY_AGG(allergen) AS allergies_arr
+      FROM allergies
+      WHERE patient_id = ?
+      GROUP BY patient_id
+    ) a ON a.patient_id = p.patient_id
+    LEFT JOIN (
+      SELECT patient_id, ARRAY_AGG(note_text) AS notes_arr
+      FROM nursing_notes
+      WHERE patient_id = ?
+      GROUP BY patient_id
+    ) n ON n.patient_id = p.patient_id
+    WHERE p.patient_id = ?
+  `;
+
+  const rows = await executeSql(sql, [patientId, patientId, patientId, patientId, patientId, patientId]);
+  if (rows.length === 0) return null;
+
+  const r = rows[0];
+  let latestVitals = { hr: null, bpSys: null, bpDia: null, rr: null, temp: null, spo2: null, timestamp: "2026-01-01T00:00:00.000Z" };
+  if (r.VITALS_ARR) {
+    const parsed = typeof r.VITALS_ARR === 'string' ? JSON.parse(r.VITALS_ARR) : r.VITALS_ARR;
+    for (const v of parsed) {
+      if (!v) continue;
+
+      const getV = (key: string): number | null => {
+        const val = v[key] !== undefined ? v[key] : v[key.toUpperCase()];
+        return (val === null || val === undefined) ? null : Number(val);
+      };
+
+      const hr = getV("hr");
+      if (latestVitals.hr === null && hr !== null) latestVitals.hr = hr;
+
+      const bpSys = getV("bp_sys");
+      if (latestVitals.bpSys === null && bpSys !== null) latestVitals.bpSys = bpSys;
+
+      const bpDia = getV("bp_dia");
+      if (latestVitals.bpDia === null && bpDia !== null) latestVitals.bpDia = bpDia;
+
+      const rr = getV("rr");
+      if (latestVitals.rr === null && rr !== null) latestVitals.rr = rr;
+
+      const temp = getV("temp");
+      if (latestVitals.temp === null && temp !== null) {
+        latestVitals.temp = temp < 50 ? parseFloat((temp * 9 / 5 + 32).toFixed(1)) : temp;
+      }
+
+      const spo2 = getV("spo2");
+      if (latestVitals.spo2 === null && spo2 !== null) latestVitals.spo2 = spo2;
+
+      if (latestVitals.timestamp.startsWith("2026") && (hr !== null || bpSys !== null || rr !== null || temp !== null || spo2 !== null)) {
+          latestVitals.timestamp = v.timestamp || v.TIMESTAMP || latestVitals.timestamp;
+      }
+    }
+  }
+
+  return {
     id: r.PATIENT_ID,
     name: r.NAME,
     age: r.AGE,
@@ -477,12 +649,12 @@ export async function getCensusFromSnowflake(): Promise<any[]> {
     diagnosis: r.DIAGNOSIS,
     summary: r.SUMMARY,
     riskScore: r.RISK_SCORE ?? 0,
-    vitals: r.VITALS ? (typeof r.VITALS === 'string' ? JSON.parse(r.VITALS) : r.VITALS) : { hr: 0, bpSys: 0, bpDia: 0, rr: 0, temp: 0, spo2: 0, timestamp: new Date().toISOString() },
+    vitals: latestVitals,
     labs: r.LABS ? (typeof r.LABS === 'string' ? JSON.parse(r.LABS) : r.LABS) : [],
     meds: r.MEDS ? (typeof r.MEDS === 'string' ? JSON.parse(r.MEDS) : r.MEDS) : [],
     allergies: r.ALLERGIES ? (typeof r.ALLERGIES === 'string' ? JSON.parse(r.ALLERGIES) : r.ALLERGIES) : [],
     notes: r.NOTES ? (typeof r.NOTES === 'string' ? JSON.parse(r.NOTES) : r.NOTES) : []
-  }));
+  };
 }
 
 /**

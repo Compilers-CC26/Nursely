@@ -61,8 +61,28 @@ export default function App() {
   // --- Effects ---
   // 1. Fetch live census on launch, then 2. Pre-seed Snowflake
   useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+
     if (window.electronAPI?.fhir?.getCensus) {
       setCensusStatus("loading");
+
+      // Subscribe to progressive updates before calling getCensus
+      if (window.electronAPI.fhir.onPatientUpdate) {
+        unsubscribe = window.electronAPI.fhir.onPatientUpdate((patient: Patient) => {
+          setCensusStatus("ready"); // Show table as soon as one patient is available
+          setLiveCensus((prev) => {
+            // Check if patient already exists (e.g. from an earlier partial load)
+            const exists = prev.some(p => p.id === patient.id);
+            if (exists) {
+              return prev.map(p => p.id === patient.id ? patient : p);
+            }
+            // Append and maintain risk score sorting
+            const next = [...prev, patient];
+            return next.sort((a, b) => b.riskScore - a.riskScore);
+          });
+        });
+      }
+
       window.electronAPI.fhir.getCensus()
         .then((res) => {
           if (res.success && res.census) {
@@ -101,6 +121,10 @@ export default function App() {
       setLiveCensus(listPatients());
       setCensusStatus("ready");
     }
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
 
   // --- Data ---
@@ -182,6 +206,32 @@ export default function App() {
     setSearchQuery(query);
     setRightTab("analyst");
   }, []);
+
+  // Refresh a single patient's clinical data from Snowflake/BFF
+  const refreshPatient = useCallback(async (patientId: string) => {
+    if (!window.electronAPI?.fhir?.getPatient) return;
+
+    try {
+      const { getPatientDetail } = await import("@/services/fhirMock");
+      const freshPatient = await getPatientDetail(patientId);
+
+      if (freshPatient) {
+        setLiveCensus((prev) =>
+          prev.map(p => p.id === patientId ? { ...p, ...freshPatient } : p)
+        );
+        // If this patient is currently selected/detailed, update them too
+        if (selectedPatient?.id === patientId) {
+          setSelectedPatient(prev => (prev ? { ...prev, ...freshPatient } : freshPatient));
+        }
+        if (detailPatient?.id === patientId) {
+          setDetailPatient(prev => (prev ? { ...prev, ...freshPatient } : freshPatient));
+        }
+        console.log(`[UI] Refresh complete for patient ${patientId}`);
+      }
+    } catch (err) {
+      console.warn(`[UI] Failed to refresh patient ${patientId}:`, err);
+    }
+  }, [selectedPatient?.id, detailPatient?.id]);
 
   return (
     <div className="flex h-screen flex-col bg-muted/30">
@@ -304,6 +354,7 @@ export default function App() {
                     searchQuery={debouncedQuery}
                     onSwitchToChat={switchToChat}
                     liveCensus={liveCensus}
+                    onSyncComplete={refreshPatient}
                   />
                 </div>
               ) : (

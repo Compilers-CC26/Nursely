@@ -9,13 +9,14 @@
  *   4. Returning sync status + completeness flags
  */
 
-import { fetchPatientBundle } from "./fhirClient";
+import { fetchPatientBundle, fetchPatientMetadata } from "./fhirClient";
 import { transformBundle } from "./fhirTransformer";
 import {
   upsertPatientSnapshot,
   callNurseQuery,
   isSnowflakeAvailable,
   isPatientSyncedRecent,
+  getPatientSyncMetadata,
   type NurseQueryResult,
 } from "./snowflakeClient";
 
@@ -36,21 +37,39 @@ export interface SyncResult {
 export async function syncPatient(patientId: string): Promise<SyncResult> {
   const startTime = Date.now();
 
-  // 1. Check Snowflake availability and staleness
+  // 1. Intelligent Staleness Check: Check if Snowflake is available and data is truly fresh
   const sfAvailable = await isSnowflakeAvailable();
+  let needsSync = true;
+
   if (sfAvailable) {
-    const isRecent = await isPatientSyncedRecent(patientId);
+    // A. Check if synced within the last few minutes (avoid hitting FHIR excessively)
+    const isRecent = await isPatientSyncedRecent(patientId, 5); // 5 min "safety" lock
     if (isRecent) {
-      console.log(`[Sync] Patient ${patientId} synced recently (<10min). Skipping FHIR fetch.`);
-      return {
-        success: true,
-        patientId,
-        snapshotId: "cached",
-        rowsWritten: 0,
-        completenessFlags: {}, // We could fetch these if needed, but for prompt speed we skip
-        syncDurationMs: Date.now() - startTime,
-      };
+      // B. Even if recent, check if metadata has changed (Event-based intelligence)
+      const liveMetadata = await fetchPatientMetadata(patientId);
+      const dbMetadata = await getPatientSyncMetadata(patientId);
+
+      const liveLastUpdated = liveMetadata?.meta?.lastUpdated;
+      const dbLastUpdated = dbMetadata?.fhirLastUpdated;
+
+      if (liveLastUpdated === dbLastUpdated && dbLastUpdated !== null) {
+        console.log(`[Sync] Patient ${patientId} data is up to date (LastUpdated: ${dbLastUpdated}). Skipping fetch.`);
+        needsSync = false;
+      } else {
+        console.log(`[Sync] Data changed on server (FHIR: ${liveLastUpdated}, DB: ${dbLastUpdated}). Forcing refresh.`);
+      }
     }
+  }
+
+  if (!needsSync) {
+    return {
+      success: true,
+      patientId,
+      snapshotId: "cached",
+      rowsWritten: 0,
+      completenessFlags: {},
+      syncDurationMs: Date.now() - startTime,
+    };
   }
 
   console.log(`[Sync] Starting sync for patient ${patientId}`);
@@ -142,15 +161,26 @@ export async function preseedCohort(patientIds: string[]): Promise<{
   let errors = 0;
 
   try {
-    for (const id of patientIds) {
-      try {
-        const result = await syncPatient(id);
-        if (result.success) synced++;
-        else errors++;
-      } catch (err) {
-        console.error(`[Sync] Pre-seed failed for ${id}:`, err);
-        errors++;
-      }
+    const totalToSync = patientIds.length;
+    for (let i = 0; i < totalToSync; i++) {
+        // Sleep between patients to let UI render and avoid overwhelming SQLite/API
+        if (i > 0) {
+            await new Promise((resolve) => setTimeout(resolve, 800));
+        }
+
+        const id = patientIds[i];
+
+        try {
+            const res = await syncPatient(id);
+            if (res.success) {
+            synced++;
+            } else {
+            errors++;
+            }
+        } catch (e) {
+            errors++;
+            console.error(`[Sync] Unexpected error pre-seeding ${id}:`, e);
+        }
     }
   } finally {
     isPreseeding = false;

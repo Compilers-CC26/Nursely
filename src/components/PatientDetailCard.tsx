@@ -36,16 +36,21 @@ function VitalCard({
 }: {
   icon: React.ElementType;
   label: string;
-  value: string | number;
+  value: string | number | null;
   unit: string;
 }) {
+  const isMissing = value === null || value === undefined || value === 0 || value === "null/null";
+
   return (
-    <div className="flex items-center gap-3 rounded-lg border bg-muted/30 px-4 py-3">
-      <Icon className="h-5 w-5 shrink-0 text-primary/70" />
+    <div className={cn(
+      "flex items-center gap-3 rounded-lg border px-4 py-3 transition-opacity",
+      isMissing ? "bg-muted/10 opacity-50" : "bg-muted/30"
+    )}>
+      <Icon className={cn("h-5 w-5 shrink-0", isMissing ? "text-muted-foreground" : "text-primary/70")} />
       <div className="min-w-0">
         <p className="text-xs text-muted-foreground">{label}</p>
         <p className="text-sm font-semibold tabular-nums">
-          {value} <span className="font-normal text-muted-foreground">{unit}</span>
+          {isMissing ? "N/A" : value} {!isMissing && <span className="font-normal text-muted-foreground">{unit}</span>}
         </p>
       </div>
     </div>
@@ -95,9 +100,19 @@ export default function PatientDetailCard({ patient, onBack }: PatientDetailCard
           </h3>
           <div className="grid grid-cols-3 gap-2">
             <VitalCard icon={Heart} label="Heart Rate" value={vitals.hr} unit="bpm" />
-            <VitalCard icon={Activity} label="Blood Pressure" value={`${vitals.bpSys}/${vitals.bpDia}`} unit="mmHg" />
+            <VitalCard
+              icon={Activity}
+              label="Blood Pressure"
+              value={vitals.bpSys && vitals.bpDia ? `${vitals.bpSys}/${vitals.bpDia}` : null}
+              unit="mmHg"
+            />
             <VitalCard icon={Wind} label="Resp. Rate" value={vitals.rr} unit="/min" />
-            <VitalCard icon={Thermometer} label="Temperature" value={vitals.temp.toFixed(1)} unit="°F" />
+            <VitalCard
+              icon={Thermometer}
+              label="Temperature"
+              value={vitals.temp !== null ? vitals.temp.toFixed(1) : null}
+              unit="°F"
+            />
             <VitalCard icon={Droplets} label="SpO2" value={vitals.spo2} unit="%" />
           </div>
           {vitals.timestamp && (
