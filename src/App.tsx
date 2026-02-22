@@ -8,9 +8,11 @@ import ColumnPicker from "@/components/ColumnPicker";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { listPatients, searchPatients } from "@/services/fhirMock";
+import { listPatients } from "@/services/fhirMock";
 import type { Patient } from "@/types";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
+import type { Session } from "@supabase/supabase-js";
 import { Plus, Search, Activity, RefreshCw } from "lucide-react";
 import nurselyLogo from "../assets/images/Nursely_Logo.svg";
 
@@ -38,6 +40,40 @@ function useDebounce<T>(value: T, delay: number): T {
 }
 
 export default function App() {
+  const [session, setSession] = useState<Session | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authMessage, setAuthMessage] = useState<string | null>(null);
+  const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+
+  useEffect(() => {
+    let isMounted = true;
+
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (!isMounted) return;
+      if (error) {
+        setAuthError(error.message);
+      }
+      setSession(data.session);
+      setAuthLoading(false);
+    });
+
+    const { data: subscriptionData } = supabase.auth.onAuthStateChange(
+      (_event, nextSession) => {
+        setSession(nextSession);
+        setAuthLoading(false);
+      }
+    );
+
+    return () => {
+      isMounted = false;
+      subscriptionData.subscription.unsubscribe();
+    };
+  }, []);
+
   // --- State ---
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedQuery = useDebounce(searchQuery, 300);
@@ -183,6 +219,297 @@ export default function App() {
     setRightTab("analyst");
   }, []);
 
+  const handleSignIn = useCallback(
+    async (event: React.FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      setAuthError(null);
+      setAuthMessage(null);
+      setAuthBusy(true);
+
+      const { error } = await supabase.auth.signInWithPassword({
+        email: authEmail.trim(),
+        password: authPassword,
+      });
+
+      if (error) {
+        setAuthError(error.message);
+      }
+      setAuthBusy(false);
+    },
+    [authEmail, authPassword]
+  );
+
+  const handleSignUp = useCallback(
+    async (event: React.FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      setAuthError(null);
+      setAuthMessage(null);
+      setAuthBusy(true);
+
+      const { data, error } = await supabase.auth.signUp({
+        email: authEmail.trim(),
+        password: authPassword,
+      });
+
+      if (error) {
+        setAuthError(error.message);
+      } else if (data.session) {
+        setAuthMessage("Account created. You are now signed in.");
+      } else {
+        setAuthMessage("Account created. Check your email to confirm your account.");
+      }
+      setAuthBusy(false);
+    },
+    [authEmail, authPassword]
+  );
+
+  const handleOAuthSignIn = useCallback(async (provider: "google" | "azure") => {
+    setAuthError(null);
+    setAuthMessage(null);
+    setAuthBusy(true);
+
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: { skipBrowserRedirect: true },
+    });
+
+    if (error) {
+      setAuthError(error.message);
+      setAuthBusy(false);
+      return;
+    }
+
+    if (data?.url) {
+      window.location.assign(data.url);
+      return;
+    }
+
+    setAuthError("OAuth sign-in could not be started.");
+    setAuthBusy(false);
+  }, []);
+
+  const handleSignOut = useCallback(async () => {
+    setAuthError(null);
+    setAuthMessage(null);
+    setAuthBusy(true);
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      setAuthError(error.message);
+    } else {
+      setAuthEmail("");
+      setAuthPassword("");
+      setAuthMode("signin");
+    }
+    setAuthBusy(false);
+  }, []);
+
+  if (authLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-muted/30">
+        <div className="text-sm text-muted-foreground">Checking authentication...</div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className="min-h-screen grid lg:grid-cols-2 bg-white">
+        <div className="relative hidden lg:flex items-center justify-center overflow-hidden bg-gradient-to-br from-neutral-950 to-neutral-900 p-10">
+          <div
+            className="pointer-events-none absolute inset-0 opacity-20"
+            style={{
+              backgroundImage:
+                "linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.08) 1px, transparent 1px)",
+              backgroundSize: "44px 44px",
+            }}
+          />
+          <div className="pointer-events-none absolute -top-24 -left-16 h-64 w-64 rounded-full bg-blue-500/10 blur-3xl" />
+
+          <div className="relative z-10 w-full max-w-xl rounded-3xl border border-white/10 bg-white/5 p-8 text-white shadow-2xl backdrop-blur-xl">
+            <div className="mb-8 flex items-start gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-white/10 text-sm font-semibold">
+                N
+              </div>
+              <div>
+                <p className="text-xl font-semibold">Nursely Analyst</p>
+                <p className="text-sm text-white/70">Clinical citations assistant</p>
+              </div>
+            </div>
+
+            <div className="mb-8 max-w-[300px] rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm text-white/90">
+              Safe IV potassium rate?
+            </div>
+            <div className="mb-8 flex flex-wrap gap-2">
+              <span className="rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-xs text-white/75">
+                Includes dosing range
+              </span>
+              <span className="rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-xs text-white/75">
+                Notes renal impairment
+              </span>
+              <span className="rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-xs text-white/75">
+                Cites primary sources
+              </span>
+            </div>
+
+            <div className="mb-6 h-px bg-white/15" />
+
+            <div className="mb-8 flex flex-wrap gap-2">
+              <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs text-white/70">
+                Evidence-backed citations
+              </span>
+              <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs text-white/70">
+                Dose ranges + contraindications
+              </span>
+              <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs text-white/70">
+                High-risk medication flags
+              </span>
+            </div>
+
+            <p className="text-sm text-white/75">
+              Evidence-backed answers for bedside decisions.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-center p-6 lg:p-12">
+          <form
+            onSubmit={authMode === "signin" ? handleSignIn : handleSignUp}
+            className="w-full max-w-md space-y-6"
+          >
+            <div className="space-y-2">
+              <h1 className="text-3xl font-semibold tracking-tight">
+                {authMode === "signin" ? "Welcome back" : "Create your account"}
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                {authMode === "signin"
+                  ? "Sign in to your account to continue."
+                  : "Start using Nursely in minutes."}
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 w-full rounded-lg justify-start gap-3 px-4 text-[15px] disabled:opacity-100"
+                onClick={() => handleOAuthSignIn("google")}
+                disabled={authBusy}
+              >
+                <span className="inline-flex h-5 w-5 items-center justify-center">
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                    className="h-5 w-5"
+                  >
+                    <path fill="#EA4335" d="M12 10.2v3.9h5.5c-.2 1.3-1.5 3.9-5.5 3.9-3.3 0-6-2.7-6-6s2.7-6 6-6c1.9 0 3.1.8 3.9 1.5l2.7-2.6C16.9 3.3 14.7 2.4 12 2.4A9.6 9.6 0 0 0 2.4 12 9.6 9.6 0 0 0 12 21.6c5.5 0 9.2-3.9 9.2-9.3 0-.6-.1-1.1-.2-1.5H12z" />
+                    <path fill="#34A853" d="M2.4 7.8l3.2 2.3C6.4 8 9 6 12 6c1.9 0 3.1.8 3.9 1.5l2.7-2.6C16.9 3.3 14.7 2.4 12 2.4 8.3 2.4 5 4.5 3.4 7.6z" />
+                    <path fill="#FBBC05" d="M12 21.6c2.6 0 4.9-.9 6.5-2.5l-3-2.5c-.8.6-1.9 1-3.5 1-3 0-5.6-2-6.5-4.8l-3.3 2.5A9.6 9.6 0 0 0 12 21.6z" />
+                    <path fill="#4285F4" d="M21.2 12.3c0-.6-.1-1.1-.2-1.5H12v3.9h5.5c-.3 1-1 2-2 2.7l3 2.5c1.8-1.7 2.7-4.2 2.7-7.6z" />
+                  </svg>
+                </span>
+                Continue with Google
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 w-full rounded-lg justify-start gap-3 px-4 text-[15px] disabled:opacity-100"
+                onClick={() => handleOAuthSignIn("azure")}
+                disabled={authBusy}
+              >
+                <span className="inline-flex h-5 w-5 items-center justify-center">
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                    className="h-5 w-5"
+                  >
+                    <path fill="#0078D4" d="M1.5 4.5 9.4 3v8.6H1.5V4.5Zm0 15 7.9 1.5v-8.3H1.5v6.8Zm8.8 1.7 12.2 1.8v-10h-12.2v8.2Zm0-18.4v8.8h12.2V1L10.3 2.8Z"/>
+                  </svg>
+                </span>
+                Continue with Outlook
+              </Button>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="h-px flex-1 bg-border" />
+              <span className="text-xs text-muted-foreground">
+                {authMode === "signin" ? "or continue with email" : "or sign up with email"}
+              </span>
+              <div className="h-px flex-1 bg-border" />
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label htmlFor="auth-email" className="text-sm font-medium text-foreground">
+                  Email address
+                </label>
+                <Input
+                  id="auth-email"
+                  type="email"
+                  placeholder="you@company.com"
+                  value={authEmail}
+                  onChange={(e) => setAuthEmail(e.target.value)}
+                  className="h-11 rounded-lg border bg-slate-50 transition focus-visible:ring-2 focus-visible:ring-blue-500/20"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="auth-password" className="text-sm font-medium text-foreground">
+                  Password
+                </label>
+                <Input
+                  id="auth-password"
+                  type="password"
+                  placeholder="Enter your password"
+                  value={authPassword}
+                  onChange={(e) => setAuthPassword(e.target.value)}
+                  className="h-11 rounded-lg border bg-slate-50 transition focus-visible:ring-2 focus-visible:ring-blue-500/20"
+                  required
+                />
+              </div>
+            </div>
+
+            {authError && <div className="text-sm text-red-600">{authError}</div>}
+            {authMessage && <div className="text-sm text-emerald-700">{authMessage}</div>}
+
+            <Button
+              type="submit"
+              className="h-11 w-full rounded-lg bg-neutral-900 text-white hover:bg-neutral-800"
+              disabled={authBusy}
+            >
+              {authBusy
+                ? authMode === "signin"
+                  ? "Signing in..."
+                  : "Creating account..."
+                : authMode === "signin"
+                  ? "Sign in ->"
+                  : "Create account ->"}
+            </Button>
+
+            <p className="text-xs text-muted-foreground">
+              By continuing, you agree to our Terms of Service and Privacy Policy.
+            </p>
+
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full"
+              disabled={authBusy}
+              onClick={() => {
+                setAuthMode((mode) => (mode === "signin" ? "signup" : "signin"));
+                setAuthError(null);
+                setAuthMessage(null);
+              }}
+            >
+              {authMode === "signin"
+                ? "Need an account? Sign up"
+                : "Already have an account? Sign in"}
+            </Button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen flex-col bg-muted/30">
       {/* ═══ Header bar ═══ */}
@@ -218,6 +545,15 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">{session.user.email}</span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSignOut}
+            disabled={authBusy}
+          >
+            Sign out
+          </Button>
           <Button
             variant="outline"
             size="sm"
