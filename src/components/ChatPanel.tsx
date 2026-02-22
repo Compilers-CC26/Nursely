@@ -73,15 +73,16 @@ export default function ChatPanel({
   const [showTableSearch, setShowTableSearch] = useState(false);
   const [tableSearchInput, setTableSearchInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const lastMsgRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const lastConsumedPending = useRef<string | null>(null);
 
   const suggestions = getSuggestions(selectedPatient);
 
-  // Auto-scroll to bottom on new messages
+  // Scroll so the latest message starts near the top of the viewport
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (lastMsgRef.current) {
+      lastMsgRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }, [messages, isLoading]);
 
@@ -188,8 +189,12 @@ export default function ChatPanel({
         ref={scrollRef}
         className="min-h-0 flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-5"
       >
-        {messages.map((msg) => (
-          <div key={msg.id} className="flex flex-col gap-1.5">
+        {messages.map((msg, i) => (
+          <div
+            key={msg.id}
+            ref={i === messages.length - 1 ? lastMsgRef : undefined}
+            className="flex flex-col gap-1.5"
+          >
             {msg.role === "user" ? (
               <div className="flex justify-end">
                 <div className="rounded-2xl bg-primary/10 px-4 py-2.5 text-[13px] leading-relaxed text-foreground max-w-[88%]">
