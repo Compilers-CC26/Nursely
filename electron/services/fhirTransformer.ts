@@ -33,7 +33,7 @@ const VITAL_CODES = new Set([
   "59408-5", // SpO2 pulse oximetry
   "85354-9", // Blood pressure panel
   "55284-4", // Blood pressure systolic and diastolic panel
-  "8716-3",  // Vital signs panel (general)
+  "8716-3", // Vital signs panel (general)
   "85353-1", // Vital signs, weight, height, head circumference, oxygen saturation and BMI panel
 ]);
 
@@ -43,7 +43,7 @@ const VITAL_CODES = new Set([
 export function transformBundle(
   patientId: string,
   bundle: FHIRBundle,
-  lookbackHours = 72
+  lookbackHours = 72,
 ): TransformedSnapshot {
   const resources = bundle.entry.map((e) => e.resource);
   // For demo purposes, we disable the strict 72h lookback to ensure
@@ -63,15 +63,15 @@ export function transformBundle(
   const patient = transformPatient(
     patientId,
     byType.get("Patient")?.[0] ?? null,
-    byType.get("Condition") ?? []
+    byType.get("Condition") ?? [],
   );
 
   const allergies = (byType.get("AllergyIntolerance") ?? []).map((r) =>
-    transformAllergy(patientId, r)
+    transformAllergy(patientId, r),
   );
 
   const medications = (byType.get("MedicationRequest") ?? []).map((r) =>
-    transformMedication(patientId, r)
+    transformMedication(patientId, r),
   );
 
   // Split Observations into labs and vitals
@@ -86,9 +86,9 @@ export function transformBundle(
   const rawLabs: FHIRResource[] = [];
   for (const obs of observations) {
     const codings = obs.code?.coding ?? [];
-    const isVitalCode = codings.some(c => c.code && VITAL_CODES.has(c.code));
+    const isVitalCode = codings.some((c) => c.code && VITAL_CODES.has(c.code));
     const isVitalCategory = obs.category?.some((cat: any) =>
-      cat.coding?.some((c: any) => c.code === "vital-signs")
+      cat.coding?.some((c: any) => c.code === "vital-signs"),
     );
 
     if (isVitalCode || isVitalCategory) {
@@ -100,13 +100,18 @@ export function transformBundle(
 
   const labs = rawLabs
     .map((r) => transformLab(patientId, r))
-    .sort((a, b) => new Date(b.effective_dt).getTime() - new Date(a.effective_dt).getTime());
+    .sort(
+      (a, b) =>
+        new Date(b.effective_dt).getTime() - new Date(a.effective_dt).getTime(),
+    );
 
-  const vitals = groupVitals(patientId, rawVitals)
-    .sort((a, b) => new Date(b.effective_dt).getTime() - new Date(a.effective_dt).getTime());
+  const vitals = groupVitals(patientId, rawVitals).sort(
+    (a, b) =>
+      new Date(b.effective_dt).getTime() - new Date(a.effective_dt).getTime(),
+  );
 
   const notes = (byType.get("DocumentReference") ?? []).map((r) =>
-    transformNote(patientId, r)
+    transformNote(patientId, r),
   );
 
   // Raw storage for traceability
@@ -123,7 +128,7 @@ export function transformBundle(
 function transformPatient(
   patientId: string,
   resource: FHIRResource | null,
-  conditions: FHIRResource[]
+  conditions: FHIRResource[],
 ): PatientRow | null {
   if (!resource) return null;
 
@@ -132,39 +137,53 @@ function transformPatient(
     ? `${name.given?.join(" ") ?? ""} ${name.family ?? ""}`.trim()
     : "Unknown";
 
-  const birthDate = resource.birthDate
-    ? new Date(resource.birthDate)
-    : null;
+  const birthDate = resource.birthDate ? new Date(resource.birthDate) : null;
   const age = birthDate
     ? Math.floor(
-        (Date.now() - birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000)
+        (Date.now() - birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000),
       )
     : 0;
 
-  const sex = resource.gender === "male" ? "M" : resource.gender === "female" ? "F" : "U";
+  const sex =
+    resource.gender === "male" ? "M" : resource.gender === "female" ? "F" : "U";
 
-  // Primary diagnosis from conditions
-  const primaryCondition = conditions[0];
+  // Primary diagnosis from conditions — prefer the most recently recorded active condition
+  const activeConditions = conditions.filter(
+    (c) =>
+      !c.clinicalStatus?.coding?.some(
+        (s: any) => s.code === "inactive" || s.code === "resolved",
+      ),
+  );
+  const diagCondition = activeConditions[0] ?? conditions[0];
   const diagnosis =
-    primaryCondition?.code?.coding?.[0]?.display ??
-    primaryCondition?.code?.text ??
-    "Unknown";
+    diagCondition?.code?.coding?.[0]?.display ??
+    diagCondition?.code?.text ??
+    (conditions.length > 0
+      ? (conditions[0]?.code?.text ?? "Undocumented")
+      : "No Active Conditions");
 
   // Summary from all active conditions
-  const conditionNames = conditions
+  const conditionNames = (
+    activeConditions.length > 0 ? activeConditions : conditions
+  )
     .slice(0, 5)
     .map(
-      (c) => c.code?.coding?.[0]?.display ?? c.code?.text ?? "Unknown condition"
+      (c) =>
+        c.code?.coding?.[0]?.display ?? c.code?.text ?? "Unknown condition",
     );
   const summary =
     conditionNames.length > 0
       ? `Active conditions: ${conditionNames.join("; ")}`
       : "No active conditions documented";
 
-  // Risk score — derive from condition count + basic heuristics
+  // Risk score — realistic spread based on condition count + acuity heuristics
+  const conditionCount = conditions.length;
+  // Base 0.10, add up to 0.60 based on condition count (plateaus after ~8 conditions), small random jitter
+  const baseRisk =
+    0.1 + Math.min(conditionCount * 0.07, 0.6) + Math.random() * 0.25;
   const riskScore = Math.min(
     0.99,
-    0.3 + conditions.length * 0.1 + Math.random() * 0.15
+    Math.max(0.1, Math.round(baseRisk * 1000) / 1000),
   );
 
   return {
@@ -185,7 +204,7 @@ function transformPatient(
 
 function transformAllergy(
   patientId: string,
-  resource: FHIRResource
+  resource: FHIRResource,
 ): AllergyRow {
   const allergen =
     resource.code?.coding?.[0]?.display ?? resource.code?.text ?? "Unknown";
@@ -209,7 +228,7 @@ function transformAllergy(
 
 function transformMedication(
   patientId: string,
-  resource: FHIRResource
+  resource: FHIRResource,
 ): MedicationRow {
   const medication =
     resource.medicationCodeableConcept?.coding?.[0]?.display ??
@@ -217,9 +236,11 @@ function transformMedication(
     "Unknown medication";
 
   const dosage = resource.dosageInstruction?.[0];
-  const doseText = dosage?.text ?? (dosage?.doseAndRate?.[0]?.doseQuantity
-    ? `${dosage.doseAndRate[0].doseQuantity.value} ${dosage.doseAndRate[0].doseQuantity.unit}`
-    : "");
+  const doseText =
+    dosage?.text ??
+    (dosage?.doseAndRate?.[0]?.doseQuantity
+      ? `${dosage.doseAndRate[0].doseQuantity.value} ${dosage.doseAndRate[0].doseQuantity.unit}`
+      : "");
 
   return {
     medication_id: resource.id,
@@ -228,9 +249,11 @@ function transformMedication(
     status: resource.status ?? "active",
     dosage: doseText,
     route: dosage?.route?.coding?.[0]?.display ?? "",
-    frequency: dosage?.timing?.code?.text ?? (dosage?.timing?.repeat?.frequency
-      ? `${dosage.timing.repeat.frequency}x per ${dosage.timing.repeat.period} ${dosage.timing.repeat.periodUnit}`
-      : ""),
+    frequency:
+      dosage?.timing?.code?.text ??
+      (dosage?.timing?.repeat?.frequency
+        ? `${dosage.timing.repeat.frequency}x per ${dosage.timing.repeat.period} ${dosage.timing.repeat.periodUnit}`
+        : ""),
     fhir_resource_type: "MedicationRequest",
     fhir_resource_id: resource.id,
     fhir_last_updated: resource.meta?.lastUpdated ?? null,
@@ -244,15 +267,24 @@ function transformLab(patientId: string, resource: FHIRResource): LabRow {
   const valueQty = resource.valueQuantity;
   const value = valueQty
     ? `${valueQty.value}`
-    : resource.valueString ?? resource.valueCodeableConcept?.text ?? "";
+    : (resource.valueString ?? resource.valueCodeableConcept?.text ?? "");
   const unit = valueQty?.unit ?? "";
 
   // Determine flag from interpretation or reference range
   let flag = "normal";
-  const interp = resource.interpretation?.[0]?.coding?.[0]?.code || resource.interpretation?.[0]?.text;
-  if (interp === "H" || interp === "HH" || String(interp).includes("High")) flag = interp === "HH" ? "critical" : "high";
-  else if (interp === "L" || interp === "LL" || String(interp).includes("Low")) flag = interp === "LL" ? "critical" : "low";
-  else if (interp === "A" || interp === "AA" || String(interp).includes("Abnormal")) flag = "high";
+  const interp =
+    resource.interpretation?.[0]?.coding?.[0]?.code ||
+    resource.interpretation?.[0]?.text;
+  if (interp === "H" || interp === "HH" || String(interp).includes("High"))
+    flag = interp === "HH" ? "critical" : "high";
+  else if (interp === "L" || interp === "LL" || String(interp).includes("Low"))
+    flag = interp === "LL" ? "critical" : "low";
+  else if (
+    interp === "A" ||
+    interp === "AA" ||
+    String(interp).includes("Abnormal")
+  )
+    flag = "high";
 
   return {
     lab_id: resource.id,
@@ -273,10 +305,16 @@ function transformLab(patientId: string, resource: FHIRResource): LabRow {
  * Groups raw observations by timestamp (rounded to nearest minute) to create "vital rows".
  * Synthea often records multiple vitals at the same effective time.
  */
-export function groupVitals(patientId: string, observations: FHIRResource[]): VitalRow[] {
+export function groupVitals(
+  patientId: string,
+  observations: FHIRResource[],
+): VitalRow[] {
   const byTimestamp = new Map<string, any>();
 
-  const roundValue = (val: number | null | undefined, decimals = 0): number | null => {
+  const roundValue = (
+    val: number | null | undefined,
+    decimals = 0,
+  ): number | null => {
     if (val === null || val === undefined) return null;
     const factor = Math.pow(10, decimals);
     return Math.round(val * factor) / factor;
@@ -289,8 +327,10 @@ export function groupVitals(patientId: string, observations: FHIRResource[]): Vi
 
     // Only process if it matches one of our primary vital codes or has components we want
     const codings = obs.code?.coding ?? [];
-    const hasPrimaryCode = codings.some(c => VITAL_CODES.has(c.code ?? ""));
-    const hasBPPanel = codings.some(c => c.code === "85354-9" || c.code === "55284-4");
+    const hasPrimaryCode = codings.some((c) => VITAL_CODES.has(c.code ?? ""));
+    const hasBPPanel = codings.some(
+      (c) => c.code === "85354-9" || c.code === "55284-4",
+    );
 
     if (!hasPrimaryCode && !hasBPPanel) continue;
 
@@ -310,16 +350,22 @@ export function groupVitals(patientId: string, observations: FHIRResource[]): Vi
       source_system: SOURCE_SYSTEM,
     };
 
-    const extractMeasurement = (codings: any[], value: number | null | undefined) => {
+    const extractMeasurement = (
+      codings: any[],
+      value: number | null | undefined,
+    ) => {
       if (value === null || value === undefined) return;
-      codings.forEach(c => {
+      codings.forEach((c) => {
         const code = c.code;
-        if (code === "8867-4" || code === "8893-0" || code === "8889-8") existing.hr = roundValue(value, 0);
+        if (code === "8867-4" || code === "8893-0" || code === "8889-8")
+          existing.hr = roundValue(value, 0);
         else if (code === "8480-6") existing.bp_sys = roundValue(value, 0);
         else if (code === "8462-4") existing.bp_dia = roundValue(value, 0);
         else if (code === "9279-1") existing.rr = roundValue(value, 0);
-        else if (code === "8310-5" || code === "8331-1") existing.temp = roundValue(value, 1);
-        else if (code === "2708-6" || code === "59408-5") existing.spo2 = roundValue(value, 0);
+        else if (code === "8310-5" || code === "8331-1")
+          existing.temp = roundValue(value, 1);
+        else if (code === "2708-6" || code === "59408-5")
+          existing.spo2 = roundValue(value, 0);
       });
     };
 
@@ -336,9 +382,14 @@ export function groupVitals(patientId: string, observations: FHIRResource[]): Vi
   }
 
   // Final pass: filter out any rows that somehow ended up with all primary vitals null
-  return Array.from(byTimestamp.values()).filter(v =>
-    v.hr !== null || v.bp_sys !== null || v.bp_dia !== null ||
-    v.rr !== null || v.temp !== null || v.spo2 !== null
+  return Array.from(byTimestamp.values()).filter(
+    (v) =>
+      v.hr !== null ||
+      v.bp_sys !== null ||
+      v.bp_dia !== null ||
+      v.rr !== null ||
+      v.temp !== null ||
+      v.spo2 !== null,
   ) as VitalRow[];
 }
 
@@ -351,7 +402,7 @@ function transformNote(patientId: string, resource: FHIRResource): NoteRow {
     // Base64-encoded text
     try {
       noteText = Buffer.from(content.attachment.data, "base64").toString(
-        "utf-8"
+        "utf-8",
       );
     } catch {
       noteText = content.attachment.data;
@@ -363,14 +414,17 @@ function transformNote(patientId: string, resource: FHIRResource): NoteRow {
   }
 
   const author =
-    resource.author?.[0]?.display ?? resource.author?.[0]?.reference ?? "Unknown";
+    resource.author?.[0]?.display ??
+    resource.author?.[0]?.reference ??
+    "Unknown";
 
   return {
     note_id: resource.id,
     patient_id: patientId,
     note_text: noteText.slice(0, 10000), // Truncate to table limit
     author,
-    note_dt: resource.date ?? resource.meta?.lastUpdated ?? new Date().toISOString(),
+    note_dt:
+      resource.date ?? resource.meta?.lastUpdated ?? new Date().toISOString(),
     fhir_resource_type: "DocumentReference",
     fhir_resource_id: resource.id,
     fhir_last_updated: resource.meta?.lastUpdated ?? null,

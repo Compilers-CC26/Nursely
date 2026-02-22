@@ -48,15 +48,24 @@ export default function App() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [queryColCount, setQueryColCount] = useState(0);
   const [rightTab, setRightTab] = useState<RightPanelTab>("analyst");
-  const [pendingChatMessage, setPendingChatMessage] = useState<string | null>(null);
+  const [pendingChatMessage, setPendingChatMessage] = useState<string | null>(
+    null,
+  );
 
   // Data State
   const [liveCensus, setLiveCensus] = useState<Patient[]>([]);
-  const [censusStatus, setCensusStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [censusStatus, setCensusStatus] = useState<
+    "loading" | "ready" | "error"
+  >("loading");
 
   // Sync State
-  const [preseedStatus, setPreseedStatus] = useState<"idle" | "syncing" | "done" | "error">("idle");
-  const [preseedProgress, setPreseedProgress] = useState({ synced: 0, total: 0 });
+  const [preseedStatus, setPreseedStatus] = useState<
+    "idle" | "syncing" | "done" | "error"
+  >("idle");
+  const [preseedProgress, setPreseedProgress] = useState({
+    synced: 0,
+    total: 0,
+  });
 
   // --- Effects ---
   // 1. Fetch live census on launch, then 2. Pre-seed Snowflake
@@ -68,22 +77,25 @@ export default function App() {
 
       // Subscribe to progressive updates before calling getCensus
       if (window.electronAPI.fhir.onPatientUpdate) {
-        unsubscribe = window.electronAPI.fhir.onPatientUpdate((patient: Patient) => {
-          setCensusStatus("ready"); // Show table as soon as one patient is available
-          setLiveCensus((prev) => {
-            // Check if patient already exists (e.g. from an earlier partial load)
-            const exists = prev.some(p => p.id === patient.id);
-            if (exists) {
-              return prev.map(p => p.id === patient.id ? patient : p);
-            }
-            // Append and maintain risk score sorting
-            const next = [...prev, patient];
-            return next.sort((a, b) => b.riskScore - a.riskScore);
-          });
-        });
+        unsubscribe = window.electronAPI.fhir.onPatientUpdate(
+          (patient: Patient) => {
+            setCensusStatus("ready"); // Show table as soon as one patient is available
+            setLiveCensus((prev) => {
+              // Check if patient already exists (e.g. from an earlier partial load)
+              const exists = prev.some((p) => p.id === patient.id);
+              if (exists) {
+                return prev.map((p) => (p.id === patient.id ? patient : p));
+              }
+              // Append and maintain risk score sorting
+              const next = [...prev, patient];
+              return next.sort((a, b) => b.riskScore - a.riskScore);
+            });
+          },
+        );
       }
 
-      window.electronAPI.fhir.getCensus()
+      window.electronAPI.fhir
+        .getCensus()
         .then((res) => {
           if (res.success && res.census) {
             setLiveCensus(res.census);
@@ -95,11 +107,15 @@ export default function App() {
               const patientIds = res.census.map((p: Patient) => p.id);
               setPreseedProgress({ synced: 0, total: patientIds.length });
 
-              window.electronAPI.snowflake.preseedCohort(patientIds)
+              window.electronAPI.snowflake
+                .preseedCohort(patientIds)
                 .then((syncRes) => {
                   if (syncRes.success) {
                     setPreseedStatus("done");
-                    setPreseedProgress({ synced: syncRes.synced, total: syncRes.total });
+                    setPreseedProgress({
+                      synced: syncRes.synced,
+                      total: syncRes.total,
+                    });
                   } else {
                     setPreseedStatus("error");
                   }
@@ -132,12 +148,13 @@ export default function App() {
     let base = liveCensus;
     if (debouncedQuery) {
       const q = debouncedQuery.toLowerCase();
-      base = base.filter((p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.mrn.toLowerCase().includes(q) ||
-        p.diagnosis.toLowerCase().includes(q) ||
-        p.summary.toLowerCase().includes(q) ||
-        p.notes.some(n => n.toLowerCase().includes(q))
+      base = base.filter(
+        (p) =>
+          p.name.toLowerCase().includes(q) ||
+          p.mrn.toLowerCase().includes(q) ||
+          p.diagnosis.toLowerCase().includes(q) ||
+          p.summary.toLowerCase().includes(q) ||
+          p.notes.some((n) => n.toLowerCase().includes(q)),
       );
     }
     return [...base].sort((a, b) => {
@@ -164,12 +181,12 @@ export default function App() {
         setSortDir("desc");
       }
     },
-    [sortKey]
+    [sortKey],
   );
 
   const handleToggleColumn = useCallback((key: string) => {
     setColumns((cols) =>
-      cols.map((c) => (c.key === key ? { ...c, visible: !c.visible } : c))
+      cols.map((c) => (c.key === key ? { ...c, visible: !c.visible } : c)),
     );
   }, []);
 
@@ -181,7 +198,8 @@ export default function App() {
       label: `Query ${n + 1} Score`,
       visible: true,
       width: "w-[120px]",
-      render: (p: Patient) => (p.riskScore * (0.85 + Math.random() * 0.1)).toFixed(3),
+      render: (p: Patient) =>
+        (p.riskScore * (0.85 + Math.random() * 0.1)).toFixed(3),
     };
     setColumns((cols) => [...cols, newCol]);
   }, [queryColCount]);
@@ -193,6 +211,7 @@ export default function App() {
 
   const handleBackToTable = useCallback(() => {
     setDetailPatient(null);
+    setSelectedPatient(null);
   }, []);
 
   // Cross-panel navigation: switch to Chat tab with a pre-filled message
@@ -208,39 +227,51 @@ export default function App() {
   }, []);
 
   // Refresh a single patient's clinical data from Snowflake/BFF
-  const refreshPatient = useCallback(async (patientId: string) => {
-    if (!window.electronAPI?.fhir?.getPatient) return;
+  const refreshPatient = useCallback(
+    async (patientId: string) => {
+      if (!window.electronAPI?.fhir?.getPatient) return;
 
-    try {
-      const { getPatientDetail } = await import("@/services/fhirMock");
-      const freshPatient = await getPatientDetail(patientId);
+      try {
+        const { getPatientDetail } = await import("@/services/fhirMock");
+        const freshPatient = await getPatientDetail(patientId);
 
-      if (freshPatient) {
-        setLiveCensus((prev) =>
-          prev.map(p => p.id === patientId ? { ...p, ...freshPatient } : p)
-        );
-        // If this patient is currently selected/detailed, update them too
-        if (selectedPatient?.id === patientId) {
-          setSelectedPatient(prev => (prev ? { ...prev, ...freshPatient } : freshPatient));
+        if (freshPatient) {
+          setLiveCensus((prev) =>
+            prev.map((p) =>
+              p.id === patientId ? { ...p, ...freshPatient } : p,
+            ),
+          );
+          // If this patient is currently selected/detailed, update them too
+          if (selectedPatient?.id === patientId) {
+            setSelectedPatient((prev) =>
+              prev ? { ...prev, ...freshPatient } : freshPatient,
+            );
+          }
+          if (detailPatient?.id === patientId) {
+            setDetailPatient((prev) =>
+              prev ? { ...prev, ...freshPatient } : freshPatient,
+            );
+          }
+          console.log(`[UI] Refresh complete for patient ${patientId}`);
         }
-        if (detailPatient?.id === patientId) {
-          setDetailPatient(prev => (prev ? { ...prev, ...freshPatient } : freshPatient));
-        }
-        console.log(`[UI] Refresh complete for patient ${patientId}`);
+      } catch (err) {
+        console.warn(`[UI] Failed to refresh patient ${patientId}:`, err);
       }
-    } catch (err) {
-      console.warn(`[UI] Failed to refresh patient ${patientId}:`, err);
-    }
-  }, [selectedPatient?.id, detailPatient?.id]);
+    },
+    [selectedPatient?.id, detailPatient?.id],
+  );
 
   return (
     <div className="flex h-screen flex-col bg-muted/30">
       {/* ═══ Header bar ═══ */}
       <header className="flex items-center justify-between border-b bg-white px-6 py-6">
         <div className="flex items-center gap-3">
-          <img src={nurselyLogo} alt="Nursely" className="h-14 mt-2 ml-4"/>
+          <img src={nurselyLogo} alt="Nursely" className="h-14 mt-2 ml-4" />
           {censusStatus === "loading" ? (
-            <Badge variant="outline" className="text-xs text-muted-foreground animate-pulse">
+            <Badge
+              variant="outline"
+              className="text-xs text-muted-foreground animate-pulse"
+            >
               <RefreshCw className="mr-1 h-3 w-3 animate-spin inline" />
               Loading FHIR Census...
             </Badge>
@@ -253,7 +284,8 @@ export default function App() {
           {preseedStatus === "syncing" && (
             <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-100 text-[10px] font-medium text-amber-700 animate-pulse">
               <RefreshCw className="h-2.5 w-2.5 animate-spin" />
-              Pre-seeding Snowflake ({preseedProgress.synced}/{preseedProgress.total})
+              Pre-seeding Snowflake ({preseedProgress.synced}/
+              {preseedProgress.total})
             </div>
           )}
           {preseedStatus === "done" && (
@@ -287,7 +319,12 @@ export default function App() {
         <div className="w-[70%] p-6">
           <div className="relative h-full rounded-2xl border border-border/50 bg-card shadow-lg overflow-hidden">
             {/* Layer 1 — Table view */}
-            <div className={cn("crossfade-layer flex flex-col gap-3 p-4", detailPatient && "hidden-layer")}>
+            <div
+              className={cn(
+                "crossfade-layer flex flex-col gap-3 p-4",
+                detailPatient && "hidden-layer",
+              )}
+            >
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -309,9 +346,17 @@ export default function App() {
             </div>
 
             {/* Layer 2 — Patient detail card */}
-            <div className={cn("crossfade-layer", !detailPatient && "hidden-layer")}>
+            <div
+              className={cn(
+                "crossfade-layer",
+                !detailPatient && "hidden-layer",
+              )}
+            >
               {detailPatient && (
-                <PatientDetailCard patient={detailPatient} onBack={handleBackToTable} />
+                <PatientDetailCard
+                  patient={detailPatient}
+                  onBack={handleBackToTable}
+                />
               )}
             </div>
           </div>
@@ -328,7 +373,7 @@ export default function App() {
                   "flex-1 px-4 py-2.5 text-sm font-medium transition-colors",
                   rightTab === "analyst"
                     ? "border-b-2 border-primary text-primary"
-                    : "text-muted-foreground hover:text-foreground"
+                    : "text-muted-foreground hover:text-foreground",
                 )}
               >
                 Analyst
@@ -339,7 +384,7 @@ export default function App() {
                   "flex-1 px-4 py-2.5 text-sm font-medium transition-colors",
                   rightTab === "chat"
                     ? "border-b-2 border-primary text-primary"
-                    : "text-muted-foreground hover:text-foreground"
+                    : "text-muted-foreground hover:text-foreground",
                 )}
               >
                 Chat
@@ -360,6 +405,7 @@ export default function App() {
               ) : (
                 <ChatPanel
                   selectedPatient={selectedPatient}
+                  liveCensus={liveCensus}
                   pendingMessage={pendingChatMessage}
                   onPendingMessageConsumed={() => setPendingChatMessage(null)}
                   onSearchUpdate={handleSearchFromChat}

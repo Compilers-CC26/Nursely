@@ -20,6 +20,14 @@ export interface ElectronAPI {
       census?: any[];
       error?: string;
     }>;
+    /** Subscribe to progressive patient updates during census load. Returns an unsubscribe function. */
+    onPatientUpdate: (callback: (patient: any) => void) => () => void;
+    /** Fetch a single patient's current record */
+    getPatient: (patientId: string) => Promise<{
+      success: boolean;
+      patient?: any;
+      error?: string;
+    }>;
     clearCache: () => Promise<{ success: boolean }>;
   };
   snowflake: {
@@ -33,9 +41,9 @@ export interface ElectronAPI {
       error?: string;
     }>;
     query: (
-      patientId: string,
+      patientId: string | undefined,
       question: string,
-      encounterId?: string
+      encounterId?: string,
     ) => Promise<{
       success: boolean;
       answer?: string;

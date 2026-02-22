@@ -1,7 +1,18 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Send, Bot, User, Loader2, Sparkles, ExternalLink, BookOpen, ChevronDown, ChevronUp, Search } from "lucide-react";
+import {
+  Send,
+  Bot,
+  User,
+  Loader2,
+  Sparkles,
+  ExternalLink,
+  BookOpen,
+  ChevronDown,
+  ChevronUp,
+  Search,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Patient } from "@/types";
 import {
@@ -13,6 +24,7 @@ import {
 
 interface ChatPanelProps {
   selectedPatient: Patient | null;
+  liveCensus: Patient[];
   /** Pre-filled message sent from the Analyst panel */
   pendingMessage?: string | null;
   /** Called after the pending message has been consumed */
@@ -23,6 +35,7 @@ interface ChatPanelProps {
 
 export default function ChatPanel({
   selectedPatient,
+  liveCensus,
   pendingMessage,
   onPendingMessageConsumed,
   onSearchUpdate,
@@ -34,7 +47,11 @@ export default function ChatPanel({
       content:
         "Hi! I'm your **Nurse Analyst assistant**. I can help with clinical protocols, medication questions, patient assessments, SBAR reports, and more.\n\nTry asking me anything, or use one of the quick prompts below.",
       citations: [
-        { title: "Clinical Knowledge Base", source: "Internal Guidelines", url: "#" },
+        {
+          title: "Clinical Knowledge Base",
+          source: "Internal Guidelines",
+          url: "#",
+        },
       ],
       timestamp: new Date(),
     },
@@ -58,12 +75,13 @@ export default function ChatPanel({
 
   const sendMessage = useCallback(
     async (text: string) => {
-      if (!text.trim() || isLoading) return;
+      const messageText = typeof text === "string" ? text : input;
+      if (!messageText.trim() || isLoading) return;
 
       const userMsg: ChatMessage = {
-        id: `user-${Date.now()}`,
+        id: Date.now().toString(),
         role: "user",
-        content: text.trim(),
+        content: messageText.trim(),
         timestamp: new Date(),
       };
 
@@ -73,23 +91,27 @@ export default function ChatPanel({
 
       try {
         const response = await generateResponse(
-          text,
+          messageText.trim(),
           selectedPatient,
-          messages
+          messages,
+          liveCensus,
         );
+
         const assistantMsg: ChatMessage = {
-          id: `assistant-${Date.now()}`,
+          id: (Date.now() + 1).toString(),
           role: "assistant",
           content: response.content,
           citations: response.citations,
           timestamp: new Date(),
         };
         setMessages((prev) => [...prev, assistantMsg]);
-      } catch {
+      } catch (err) {
+        console.error("Chat error:", err);
         const errorMsg: ChatMessage = {
           id: `error-${Date.now()}`,
           role: "assistant",
-          content: "Sorry, I encountered an error. Please try again.",
+          content:
+            "Sorry, I encountered an error connecting to the analytics service. Please try again.",
           timestamp: new Date(),
         };
         setMessages((prev) => [...prev, errorMsg]);
@@ -98,7 +120,7 @@ export default function ChatPanel({
         inputRef.current?.focus();
       }
     },
-    [isLoading, selectedPatient, messages]
+    [input, isLoading, selectedPatient, messages, liveCensus],
   );
 
   // Handle pending message from Analyst panel — guard against double-fire
@@ -112,7 +134,7 @@ export default function ChatPanel({
       sendMessage(pendingMessage);
       onPendingMessageConsumed?.();
     }
-  }, [pendingMessage]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pendingMessage, isLoading, sendMessage, onPendingMessageConsumed]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -136,12 +158,15 @@ export default function ChatPanel({
         <p className="mt-0.5 text-sm text-muted-foreground truncate">
           {selectedPatient
             ? `Context: ${selectedPatient.name}`
-            : "No patient selected"}
+            : "Unit View (All Patients)"}
         </p>
       </div>
 
       {/* ── Messages ── */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-5">
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-5"
+      >
         {messages.map((msg) => (
           <div key={msg.id} className="flex flex-col gap-1.5">
             {msg.role === "user" ? (
@@ -166,11 +191,13 @@ export default function ChatPanel({
             )}
 
             {/* Citations */}
-            {msg.role === "assistant" && msg.citations && msg.citations.length > 0 && (
-              <div className="ml-3">
-                <CitationBlock citations={msg.citations} />
-              </div>
-            )}
+            {msg.role === "assistant" &&
+              msg.citations &&
+              msg.citations.length > 0 && (
+                <div className="ml-3">
+                  <CitationBlock citations={msg.citations} />
+                </div>
+              )}
           </div>
         ))}
 

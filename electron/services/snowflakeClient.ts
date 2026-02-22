@@ -368,6 +368,34 @@ export async function callNurseQuery(
 }
 
 /**
+ * Call the process_cohort_query stored procedure for population-level analytics.
+ */
+export async function callCohortQuery(
+  question: string
+): Promise<NurseQueryResult> {
+  const sql = `CALL process_cohort_query(?)`;
+  const binds = [question];
+
+  const rows = await executeSql(sql, binds);
+
+  if (rows.length === 0) {
+    throw new Error("No result from cohort stored procedure");
+  }
+
+  const result = rows[0]?.PROCESS_COHORT_QUERY ?? rows[0];
+  const parsed = typeof result === "string" ? JSON.parse(result) : result;
+
+  const citations = parseCitations(parsed.search_results);
+
+  return {
+    answer: parsed.answer ?? "No answer generated.",
+    citations,
+    flags: [], // Cohort queries don't typically have completeness flags
+    dataAsOf: parsed.data_as_of ?? new Date().toISOString(),
+  };
+}
+
+/**
  * Run a cohort summary analytics query.
  */
 export async function getCohortSummary(): Promise<any> {

@@ -192,6 +192,13 @@ ipcMain.handle(
       if (!services) {
         return { success: false, error: "SNOWFLAKE_UNAVAILABLE" };
       }
+
+      // Route to cohort query if no patientId is provided
+      if (!patientId) {
+        const result = await services.syncOrchestrator.askGlobalQuestion(question);
+        return { success: true, ...result };
+      }
+
       const result = await services.syncOrchestrator.askQuestion(
         patientId,
         question,

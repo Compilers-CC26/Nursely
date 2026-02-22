@@ -171,6 +171,7 @@ AS
 $$
 DECLARE
     v_patient_context VARCHAR;
+    v_labs_context VARCHAR;
     v_snapshot_at TIMESTAMP_NTZ;
     v_completeness VARIANT;
     v_search_results VARIANT;
@@ -198,9 +199,31 @@ BEGIN
         SELECT 3, 'MEDICATIONS: ' || COALESCE(LISTAGG(medication, ', '), 'None documented')
         FROM medications WHERE patient_id = :p_patient_id
         UNION ALL
-        SELECT 4, 'LATEST VITALS: HR=' || COALESCE(TO_VARCHAR(v.hr), '?') || ', BP=' || COALESCE(TO_VARCHAR(v.bp_sys), '?') || '/' || COALESCE(TO_VARCHAR(v.bp_dia), '?') || ', Temp=' || COALESCE(TO_VARCHAR(v.temp), '?') || ', SpO2=' || COALESCE(TO_VARCHAR(v.spo2), '?')
-        FROM (SELECT hr, bp_sys, bp_dia, temp, spo2 FROM vitals WHERE patient_id = :p_patient_id AND (hr IS NOT NULL OR bp_sys IS NOT NULL OR temp IS NOT NULL OR spo2 IS NOT NULL) ORDER BY effective_dt DESC LIMIT 1) AS v
+        SELECT 4, 'LATEST VITALS: HR=' || COALESCE(TO_VARCHAR(v.hr), 'N/A') || ', BP=' || COALESCE(TO_VARCHAR(v.bp_sys), 'N/A') || '/' || COALESCE(TO_VARCHAR(v.bp_dia), 'N/A') || ', Temp=' || COALESCE(TO_VARCHAR(v.temp), 'N/A') || 'F, SpO2=' || COALESCE(TO_VARCHAR(v.spo2), 'N/A') || '%, RR=' || COALESCE(TO_VARCHAR(v.rr), 'N/A') || ' (recorded ' || COALESCE(TO_VARCHAR(v.effective_dt), 'unknown time') || ')'
+        FROM (SELECT hr, bp_sys, bp_dia, rr, temp, spo2, effective_dt FROM vitals WHERE patient_id = :p_patient_id ORDER BY effective_dt DESC LIMIT 1) AS v
     );
+
+    -- Build lab results context (most recent 15 results, flag abnormal values)
+    SELECT COALESCE(
+        LISTAGG(
+            lab_name || ': ' || COALESCE(value, '?') ||
+            CASE WHEN unit IS NOT NULL AND unit != '' THEN ' ' || unit ELSE '' END ||
+            CASE WHEN UPPER(COALESCE(flag, '')) IN ('HIGH', 'LOW', 'CRITICAL', 'ABNORMAL', 'H', 'L', 'PANIC')
+                 THEN ' [' || UPPER(flag) || ']' ELSE '' END,
+            '; '
+        ) WITHIN GROUP (ORDER BY effective_dt DESC),
+        'No labs on file'
+    )
+    INTO :v_labs_context
+    FROM (
+        SELECT lab_name, value, unit, flag, effective_dt
+        FROM lab_results
+        WHERE patient_id = :p_patient_id
+        ORDER BY effective_dt DESC
+        LIMIT 15
+    ) sub;
+
+    v_patient_context := :v_patient_context || '\nLABS: ' || :v_labs_context;
 
     -- Get search results from cortex search service
     BEGIN
@@ -210,12 +233,32 @@ BEGIN
             v_search_results := OBJECT_CONSTRUCT('results', ARRAY_CONSTRUCT());
     END;
 
-    v_prompt := 'Patient Data: ' || COALESCE(:v_patient_context, 'No records found for this patient ID.') ||
-                '\n\nRelevant Protocols: ' || TO_VARCHAR(:v_search_results) ||
-                '\n\nQuestion: ' || :p_question ||
-                '\n\nRespond as a helpful clinical assistant. Provide specific guidance based on data and protocols.';
+    v_prompt :=
+        'ROLE: Clinical decision support assistant embedded in a nurse-facing EHR dashboard. ' ||
+        'You assist registered nurses with point-of-care questions during active patient management.' || '\n' ||
 
-    v_answer := (SELECT SNOWFLAKE.CORTEX.COMPLETE('mistral-large', :v_prompt));
+        'RULES:\n' ||
+        '- Respond in clinical language appropriate for a registered nurse.\n' ||
+        '- Be concise: 3-6 sentences or a short bulleted list. No preamble or filler.\n' ||
+        '- Ground every statement in the patient data provided. Do not invent findings.\n' ||
+        '- If data is missing or unavailable, state it explicitly (e.g., "No recent vitals on file").\n' ||
+        '- Prefix critical findings with ALERT: — abnormal vitals, high-alert medications, critical lab values.\n' ||
+        '- Never diagnose. Recommend provider notification or rapid response escalation when clinically indicated.\n' ||
+        '- Cite applicable protocols briefly when relevant (e.g., "Per SEP-1 bundle...").\n' ||
+        '- Close with one specific, actionable next step for the nurse.\n' ||
+        '- This tool supports clinical judgment; it does not replace it.\n\n' ||
+
+        'PATIENT DATA:\n' ||
+        COALESCE(:v_patient_context, 'No patient data found. Advise the nurse to verify the patient ID and consult the EHR directly.') || '\n\n' ||
+
+        'RELEVANT PROTOCOLS:\n' ||
+        TO_VARCHAR(:v_search_results) || '\n\n' ||
+
+        'QUESTION: ' || :p_question || '\n\n' ||
+
+        'RESPONSE (begin with the most clinically urgent point):';
+
+    v_answer := (SELECT SNOWFLAKE.CORTEX.COMPLETE('llama3-8b', :v_prompt));
 
     v_result := OBJECT_CONSTRUCT(
         'answer', :v_answer,
@@ -227,5 +270,113 @@ BEGIN
 EXCEPTION
     WHEN OTHER THEN
         RETURN OBJECT_CONSTRUCT('answer', 'AI Error: ' || SQLERRM, 'data_as_of', CURRENT_TIMESTAMP());
+END;
+$$;
+
+-- 6. COHORT ANALYTICS RAG PROCEDURE
+CREATE OR REPLACE PROCEDURE process_cohort_query(
+    p_question VARCHAR
+)
+RETURNS VARIANT
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    v_cohort_context VARCHAR;
+    v_top_patients VARCHAR;
+    v_search_results VARIANT;
+    v_prompt VARCHAR;
+    v_answer VARCHAR;
+BEGIN
+    -- Build cohort-level stats, falling back to summary column when diagnosis is stale
+    SELECT
+        'UNIT SUMMARY: Total Patients=' || COUNT(*) ||
+        ', High Risk (score>0.80)=' || COUNT(CASE WHEN risk_score > 0.80 THEN 1 END) ||
+        ', Moderate Risk (0.50-0.80)=' || COUNT(CASE WHEN risk_score BETWEEN 0.50 AND 0.80 THEN 1 END) ||
+        ', Avg Risk Score=' || ROUND(AVG(risk_score), 2) ||
+        ', Top Conditions: ' || COALESCE(
+            LISTAGG(DISTINCT
+                CASE
+                    WHEN diagnosis IS NOT NULL
+                         AND UPPER(TRIM(diagnosis)) NOT IN ('UNKNOWN', 'NO ACTIVE CONDITIONS', 'UNDOCUMENTED', '')
+                    THEN diagnosis
+                    ELSE TRIM(REGEXP_SUBSTR(summary, 'Active conditions:\\s*([^;\\n]+)', 1, 1, 'i', 1))
+                END
+            , ', ') WITHIN GROUP (ORDER BY
+                CASE
+                    WHEN diagnosis IS NOT NULL
+                         AND UPPER(TRIM(diagnosis)) NOT IN ('UNKNOWN', 'NO ACTIVE CONDITIONS', 'UNDOCUMENTED', '')
+                    THEN diagnosis
+                    ELSE TRIM(REGEXP_SUBSTR(summary, 'Active conditions:\\s*([^;\\n]+)', 1, 1, 'i', 1))
+                END
+            ),
+            'Data unavailable'
+        )
+    INTO :v_cohort_context
+    FROM patients;
+
+    -- Top 5 highest-risk patients with names for specific ranking questions
+    SELECT LISTAGG(
+        rn || '. ' || name ||
+        ' (Risk=' || ROUND(risk_score, 2) || ', Dx=' ||
+        COALESCE(
+            CASE
+                WHEN UPPER(TRIM(diagnosis)) NOT IN ('UNKNOWN', 'NO ACTIVE CONDITIONS', 'UNDOCUMENTED', '')
+                THEN diagnosis
+                ELSE TRIM(REGEXP_SUBSTR(summary, 'Active conditions:\\s*([^;\\n]+)', 1, 1, 'i', 1))
+            END,
+            'Unknown'
+        ) || ')'
+    , '\n') WITHIN GROUP (ORDER BY rn)
+    INTO :v_top_patients
+    FROM (
+        SELECT name, risk_score, diagnosis, summary,
+               ROW_NUMBER() OVER (ORDER BY risk_score DESC) AS rn
+        FROM patients
+        QUALIFY rn <= 5
+    );
+
+    -- Search protocols for relevant clinical context
+    BEGIN
+        v_search_results := (SELECT SNOWFLAKE.CORTEX.SEARCH_PREVIEW('knowledge_search', :p_question, 3));
+    EXCEPTION
+        WHEN OTHER THEN
+            v_search_results := OBJECT_CONSTRUCT('results', ARRAY_CONSTRUCT());
+    END;
+
+    v_prompt :=
+        'ROLE: Charge nurse assistant providing unit-level clinical intelligence for active inpatient management. ' ||
+        'You support the charge nurse in identifying priorities, patterns, and risks across the entire unit census.' || '\n' ||
+
+        'RULES:\n' ||
+        '- Be concise and action-oriented. Use bullet points when listing patients or conditions.\n' ||
+        '- Lead with patient safety: flag high-risk patients and critical findings first.\n' ||
+        '- Use patient names when listing individuals. Do not use generic placeholders.\n' ||
+        '- Ground all answers in the unit data provided. Do not invent patient details.\n' ||
+        '- If census data is insufficient to answer, state what is missing.\n' ||
+        '- Prefix critical unit-level findings with ALERT:.\n' ||
+        '- Never diagnose. Recommend provider escalation for critical or deteriorating patients.\n' ||
+        '- Cite applicable protocols briefly when relevant.\n' ||
+        '- Close with a brief prioritization recommendation for the charge nurse.\n' ||
+        '- This tool supports clinical judgment; it does not replace it.\n\n' ||
+
+        'UNIT CENSUS:\n' || :v_cohort_context || '\n\n' ||
+
+        'TOP 5 HIGHEST-RISK PATIENTS:\n' || COALESCE(:v_top_patients, 'N/A') || '\n\n' ||
+
+        'RELEVANT PROTOCOLS:\n' ||
+        TO_VARCHAR(:v_search_results) || '\n\n' ||
+
+        'QUESTION: ' || :p_question || '\n\n' ||
+
+        'RESPONSE (lead with the most critical findings first):';
+
+    v_answer := (SELECT SNOWFLAKE.CORTEX.COMPLETE('llama3-8b', :v_prompt));
+
+    RETURN OBJECT_CONSTRUCT(
+        'answer', :v_answer,
+        'data_as_of', CURRENT_TIMESTAMP(),
+        'search_results', :v_search_results
+    );
 END;
 $$;
