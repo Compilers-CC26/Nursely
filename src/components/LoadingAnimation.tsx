@@ -45,7 +45,7 @@ export function LoadingAnimation({ onComplete }: LoadingAnimationProps) {
             />
 
             {/* Red Cross Group */}
-            <g transform="translate(60, 43)">
+            <g transform="translate(60, 40)">
               <motion.g
                 initial={{ scale: 0, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
