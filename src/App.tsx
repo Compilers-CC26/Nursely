@@ -240,14 +240,39 @@ export default function App() {
           break;
         case "search":
           if (activeFilter.text) {
-            const q = activeFilter.text.toLowerCase();
-            base = base.filter(
-              (p) =>
-                p.name.toLowerCase().includes(q) ||
-                p.diagnosis.toLowerCase().includes(q) ||
-                p.summary.toLowerCase().includes(q) ||
-                p.meds.some((m) => m.toLowerCase().includes(q)),
-            );
+            // Tokenize: strip filler words, match if ANY significant token appears
+            const FILLER = new Set([
+              "issues",
+              "problems",
+              "patients",
+              "patient",
+              "with",
+              "having",
+              "and",
+              "or",
+              "the",
+              "a",
+              "an",
+              "who",
+              "have",
+              "are",
+              "is",
+            ]);
+            const tokens = activeFilter.text
+              .toLowerCase()
+              .split(/\s+/)
+              .filter((t) => t.length > 2 && !FILLER.has(t));
+            if (tokens.length > 0) {
+              base = base.filter((p) =>
+                tokens.some(
+                  (t) =>
+                    p.name.toLowerCase().includes(t) ||
+                    p.diagnosis.toLowerCase().includes(t) ||
+                    p.summary.toLowerCase().includes(t) ||
+                    p.meds.some((m) => m.toLowerCase().includes(t)),
+                ),
+              );
+            }
           }
           break;
         // 'clear' type: no filtering, just reset (handled by setActiveFilter(null))
@@ -303,7 +328,17 @@ export default function App() {
         visible: true,
         width: "w-[90px]",
         render: (p: Patient) => {
-          const rawLabel = results.get(p.name);
+          // Try exact match first, then case-insensitive, then partial (LLM may reformat names)
+          const pLower = p.name.toLowerCase().trim();
+          const rawLabel =
+            results.get(p.name) ??
+            [...results.entries()].find(
+              ([k]) => k.toLowerCase().trim() === pLower,
+            )?.[1] ??
+            [...results.entries()].find(([k]) => {
+              const kl = k.toLowerCase().trim();
+              return kl.includes(pLower) || pLower.includes(kl);
+            })?.[1];
           if (!rawLabel)
             return <span className="text-muted-foreground/40 text-xs">—</span>;
           const upper = rawLabel.toUpperCase();

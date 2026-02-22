@@ -1199,9 +1199,35 @@ export async function generateResponse(
     ].join("\n");
   }
 
-  // ── Short-circuit: pure clinical knowledge (no patient, no cohort intent) ──
-  // If the question has no patient context and no cohort keyword but matches a
-  // known clinical topic, answer from the local evidence library immediately.
+  // ── Short-circuit 1: filter / table commands ──
+  // Run this FIRST — before knowledge lookup and before Snowflake — so that
+  // queries like "show me patients with diabetic issues" or "filter to high risk"
+  // immediately update the table without hitting the LLM at all.
+  const earlyFilter = detectFilterIntent(message);
+  if (earlyFilter) {
+    if (earlyFilter.type === "clear") {
+      return wrap({
+        content: "Filter cleared — showing all patients.",
+        citations: [],
+        filterCommand: earlyFilter,
+      });
+    }
+    const description =
+      earlyFilter.type === "search"
+        ? `Filtering table to patients matching **${earlyFilter.text}**.`
+        : earlyFilter.type === "risk"
+          ? `Filtering table to **${earlyFilter.label}** patients.`
+          : `Filtering table to patients flagged **${earlyFilter.label}**.`;
+    return wrap({
+      content: `${description}\n\nClick the × in the filter bar above the table to clear.`,
+      citations: [],
+      filterCommand: earlyFilter,
+    });
+  }
+
+  // ── Short-circuit 2: pure clinical knowledge (no patient, no cohort intent) ──
+  // Only fires when no filter intent was detected AND the question matches a
+  // known clinical topic with no patient/cohort context needed.
   // This avoids 60 s+ Snowflake/LLM round-trips for questions like
   // "does acetaminophen interact with clonazepam?" which need no patient data.
   if (!effectivePatient && !hasCohortKeyword) {
@@ -1239,7 +1265,6 @@ export async function generateResponse(
       }
       const gResult = await sfRace(askSnowflakeCohortQuestion(enrichedMessage));
       if (gResult) {
-        const fc = detectFilterIntent(message);
         const topicCites = getTopicCitations(message);
         const merged = [
           ...gResult.citations,
@@ -1247,8 +1272,7 @@ export async function generateResponse(
             (tc) => !gResult.citations.some((gc) => gc.title === tc.title),
           ),
         ];
-        const enriched: ChatResponse = { ...gResult, citations: merged };
-        return wrap(fc ? { ...enriched, filterCommand: fc } : enriched);
+        return wrap({ ...gResult, citations: merged });
       }
     } else if (effectivePatient) {
       // Inject live frontend data into the question so Cortex always has current values
@@ -1258,7 +1282,6 @@ export async function generateResponse(
         askSnowflakeQuestion(effectivePatient.id, enrichedQuestion),
       );
       if (sfResult) {
-        const fc = detectFilterIntent(message);
         const topicCites = getTopicCitations(message);
         const sfCites = sfResult.citations.map((c) => ({
           title: c.title,
@@ -1272,11 +1295,7 @@ export async function generateResponse(
             (tc) => !sfCites.some((sc) => sc.title === tc.title),
           ),
         ];
-        return wrap({
-          content: sfResult.answer,
-          citations: merged,
-          ...(fc ? { filterCommand: fc } : {}),
-        });
+        return wrap({ content: sfResult.answer, citations: merged });
       }
     }
   } catch {
@@ -1562,10 +1581,14 @@ export function detectFilterIntent(message: string): FilterCommand | null {
     return { type: "clear", label: "All patients" };
   }
 
-  // Must contain an explicit filter/show/narrow verb + scope word
+  // Broad filter-command patterns — covers:
+  //   "show me patients with X"
+  //   "filter to X"
+  //   "show only X patients"
+  //   "display patients having X"
   const hasFilterVerb =
-    /\b(show|filter|narrow|display|limit|focus)\b/.test(lower) &&
-    /\b(only|just|to|me|down)\b/.test(lower);
+    /\b(show|filter|narrow|display|limit|find|give me|pull up)\b/.test(lower) &&
+    /\b(only|just|to|me|down|patients?|with|having)\b/.test(lower);
   if (!hasFilterVerb) return null;
 
   // Risk tier
@@ -1589,10 +1612,17 @@ export function detectFilterIntent(message: string): FilterCommand | null {
   if (/critical[- ]?lab|lab.*critical/i.test(lower))
     return { type: "flag", flag: "critical-labs", label: "Critical labs" };
 
-  // Diagnosis / free-text search — extract the key term
-  const dxMatch = lower.match(
-    /(?:show|filter|narrow).*?(?:with|for|diagnos\w*|having)\s+([a-z][a-z\s-]{2,30?})(?:\s+patients?|\s*$)/,
-  );
+  // Diagnosis / free-text search
+  // Handles: "show me patients with diabetic issues"
+  //          "filter to patients having sepsis"
+  //          "show patients with chest pain"
+  const dxMatch =
+    lower.match(
+      /\b(?:show|filter|narrow|find|display|give me|pull up)\b.*?\bpatients?\b.*?\b(?:with|having|for|who have|diagnosed with)\s+([a-z][a-z0-9\s\-]{2,40}?)(?:\s*$|\s+and\b|\s+or\b)/,
+    ) ??
+    lower.match(
+      /\b(?:show|filter|narrow|find|display)\b.*?\b(?:with|having|for)\s+([a-z][a-z0-9\s\-]{2,40}?)(?:\s*$|\s+patients?)/,
+    );
   if (dxMatch) {
     const term = dxMatch[1].trim();
     if (term.length > 2)
@@ -1614,41 +1644,39 @@ export async function runQueryColumnBatch(
   if (!census.length)
     return { results: new Map(), error: "No patients in census" };
 
-  // Build a condensed roster: just enough for LLM scoring
+  // Build a condensed roster: diagnosis + meds + key labs so the LLM has actual evidence
   const rosterLines = census.map((p) => {
     const dx = getEffectiveDiagnosis(p) ?? "No active dx";
-    const flags: string[] = [];
-    if (p.riskScore > 0.65) flags.push("HIGH RISK");
-    if (p.labs.some((l) => l.flag === "critical")) flags.push("CRITICAL LABS");
-    if (p.labs.some((l) => l.flag === "high" || l.flag === "low"))
-      flags.push("ABNORMAL LABS");
-    const v = p.vitals;
-    if (v.hr != null && (v.hr > 120 || v.hr < 50)) flags.push("HR CRITICAL");
-    if (v.bpSys != null && v.bpSys < 90) flags.push("BP LOW");
-    if (v.spo2 != null && v.spo2 < 94) flags.push("SPO2 LOW");
-    if (v.temp != null && v.temp > 100.4) flags.push("FEVER");
-    const allMeds = p.meds.map((m) => m.toLowerCase());
-    if (allMeds.some((m) => ANTIBIOTIC_KEYWORDS.some((kw) => m.includes(kw))))
-      flags.push("ON ANTIBIOTICS");
-    if (
-      allMeds.some((m) => FALL_RISK_MED_KEYWORDS.some((kw) => m.includes(kw)))
-    )
-      flags.push("FALL-RISK MEDS");
-    return `- ${p.name} | Age ${p.age} | Dx: ${dx} | Risk: ${p.riskScore.toFixed(2)}${
-      flags.length ? " | " + flags.join("; ") : ""
-    }`;
+    const medsShort =
+      p.meds.length > 0
+        ? p.meds.slice(0, 5).join(", ") +
+          (p.meds.length > 5 ? ` +${p.meds.length - 5} more` : "")
+        : "None";
+    const abnormalLabs = p.labs
+      .filter((l) => l.flag && l.flag !== "normal")
+      .slice(0, 4)
+      .map((l) => `${l.name} [${l.flag}]`)
+      .join(", ");
+    return (
+      `- ${p.name} | Age ${p.age} | Dx: ${dx}` +
+      ` | Meds: ${medsShort}` +
+      (abnormalLabs ? ` | Abnormal labs: ${abnormalLabs}` : "")
+    );
   });
 
   const prompt =
-    `You are scoring inpatients for a clinical triage column.\n` +
-    `INSTRUCTIONS:\n` +
-    `• For each patient below, answer the clinical question with exactly one label: YES, POSSIBLE, NO, or N/A\n` +
-    `• YES = question clearly applies | POSSIBLE = partial evidence | NO = clearly does not apply | N/A = insufficient data\n` +
-    `• Return ONLY valid JSON — no markdown fences, no explanation, no other text\n\n` +
+    `TASK: Score each patient with EXACTLY ONE WORD. No other text allowed in the values.\n` +
+    `Allowed values: YES | POSSIBLE | NO | N/A\n` +
+    `- YES      = diagnosis, meds, or labs directly match the question\n` +
+    `- POSSIBLE = related comorbidity or indirect evidence\n` +
+    `- NO       = no matching evidence (USE THIS AS DEFAULT when unsure)\n` +
+    `- N/A      = completely insufficient data\n\n` +
+    `DO NOT write the diagnosis. DO NOT explain. ONE WORD PER PATIENT ONLY.\n\n` +
+    `EXAMPLE — question: "Does this patient have diabetes?"\n` +
+    `{"Alice Johnson": "YES", "Bob Smith": "NO", "Carol White": "POSSIBLE", "Dan Brown": "N/A"}\n\n` +
     `CLINICAL QUESTION: ${question}\n\n` +
     `PATIENTS:\n${rosterLines.join("\n")}\n\n` +
-    `Return this exact structure (use the patient\'s full name as the key):\n` +
-    `{"Patient Full Name": "YES", "Other Patient": "NO", ...}\n\nJSON:`;
+    `JSON (one label per patient, nothing else):\n`;
 
   const result = await askSnowflakeCohortQuestion(prompt);
   if (!result)
@@ -1672,9 +1700,48 @@ export async function runQueryColumnBatch(
     const parsed: Record<string, string> = JSON.parse(
       jsonMatch[1] ?? jsonMatch[0],
     );
+
+    // Normalize any LLM deviation back to a valid label
+    function normalizeLabel(raw: string): string {
+      const v = raw.toUpperCase().trim();
+      if (v === "YES" || v === "NO" || v === "POSSIBLE" || v === "N/A")
+        return v;
+      if (v.startsWith("YES") || v === "TRUE" || v === "CONFIRMED")
+        return "YES";
+      if (
+        v.startsWith("POSSIBLE") ||
+        v === "PARTIAL" ||
+        v === "MAYBE" ||
+        v === "LIKELY"
+      )
+        return "POSSIBLE";
+      if (
+        v.startsWith("NO") ||
+        v === "FALSE" ||
+        v === "NONE" ||
+        v === "NEGATIVE"
+      )
+        return "NO";
+      // Anything else (e.g. the diagnosis text) → N/A so at least it's visible
+      return "N/A";
+    }
+
     const map = new Map<string, string>();
+    // Build a canonical name lookup (lowercase trim → real patient name)
+    const canonicalNames = new Map(
+      census.map((p) => [p.name.toLowerCase().trim(), p.name]),
+    );
     for (const [name, label] of Object.entries(parsed)) {
-      map.set(name.trim(), String(label).trim().toUpperCase());
+      const key = name.trim();
+      const keyLower = key.toLowerCase();
+      // Prefer the exact census name so results.get(p.name) works directly
+      const canonical =
+        canonicalNames.get(keyLower) ??
+        [...canonicalNames.entries()].find(
+          ([k]) => k.includes(keyLower) || keyLower.includes(k),
+        )?.[1] ??
+        key;
+      map.set(canonical, normalizeLabel(String(label)));
     }
     return { results: map };
   } catch {
