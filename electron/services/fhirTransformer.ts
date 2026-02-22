@@ -5,7 +5,6 @@
  * and produces normalized rows with trace fields for provenance.
  */
 
-import { v4 as uuidv4 } from "crypto";
 import type {
   FHIRBundle,
   FHIRResource,
@@ -207,9 +206,9 @@ function transformMedication(
     "Unknown medication";
 
   const dosage = resource.dosageInstruction?.[0];
-  const doseText = dosage?.text ?? dosage?.doseAndRate?.[0]?.doseQuantity
+  const doseText = dosage?.text ?? (dosage?.doseAndRate?.[0]?.doseQuantity
     ? `${dosage.doseAndRate[0].doseQuantity.value} ${dosage.doseAndRate[0].doseQuantity.unit}`
-    : "";
+    : "");
 
   return {
     medication_id: resource.id,
@@ -218,9 +217,9 @@ function transformMedication(
     status: resource.status ?? "active",
     dosage: doseText,
     route: dosage?.route?.coding?.[0]?.display ?? "",
-    frequency: dosage?.timing?.code?.text ?? dosage?.timing?.repeat?.frequency
+    frequency: dosage?.timing?.code?.text ?? (dosage?.timing?.repeat?.frequency
       ? `${dosage.timing.repeat.frequency}x per ${dosage.timing.repeat.period} ${dosage.timing.repeat.periodUnit}`
-      : "",
+      : ""),
     fhir_resource_type: "MedicationRequest",
     fhir_resource_id: resource.id,
     fhir_last_updated: resource.meta?.lastUpdated ?? null,

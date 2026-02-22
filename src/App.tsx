@@ -1,16 +1,17 @@
 import React, { useState, useMemo, useCallback, useEffect } from "react";
 import PatientTable from "@/components/PatientTable";
 import type { ColumnDef } from "@/components/PatientTable";
+import PatientDetailCard from "@/components/PatientDetailCard";
 import AnalystPanel from "@/components/AnalystPanel";
 import ChatPanel from "@/components/ChatPanel";
 import ColumnPicker from "@/components/ColumnPicker";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { listPatients, searchPatients } from "@/services/fhirMock";
 import type { Patient } from "@/types";
 import { cn } from "@/lib/utils";
 import { Plus, Search } from "lucide-react";
+import nurselyLogo from "../assets/images/Nursely_Logo.svg";
 
 type RightPanelTab = "analyst" | "chat";
 
@@ -40,6 +41,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedQuery = useDebounce(searchQuery, 300);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [detailPatient, setDetailPatient] = useState<Patient | null>(null);
   const [columns, setColumns] = useState<ColumnDef[]>(DEFAULT_COLUMNS);
   const [sortKey, setSortKey] = useState("riskScore");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -97,7 +99,12 @@ export default function App() {
   }, [queryColCount]);
 
   const handleSelectPatient = useCallback((patient: Patient) => {
-    setSelectedPatient((prev) => (prev?.id === patient.id ? null : patient));
+    setSelectedPatient(patient);
+    setDetailPatient(patient);
+  }, []);
+
+  const handleBackToTable = useCallback(() => {
+    setDetailPatient(null);
   }, []);
 
   // Cross-panel navigation: switch to Chat tab with a pre-filled message
@@ -115,18 +122,8 @@ export default function App() {
   return (
     <div className="flex h-screen flex-col bg-muted/30">
       {/* ═══ Header bar ═══ */}
-      <header className="flex items-center justify-between border-b bg-white px-6 py-4">
-        <div className="flex items-center gap-3">
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">
-            Search results
-          </h1>
-          <Badge variant="success" className="text-xs">
-            Ready
-          </Badge>
-          <span className="text-sm text-muted-foreground">
-            {filteredPatients.length.toLocaleString()} results
-          </span>
-        </div>
+      <header className="flex items-center justify-between border-b bg-white px-6 py-6">
+        <img src={nurselyLogo} alt="Nursely" className="h-14 mt-2 ml-4"/>
 
         <div className="flex items-center gap-2">
           <Button
@@ -145,75 +142,86 @@ export default function App() {
       {/* ═══ Main content: table + analyst panel ═══ */}
       <div className="flex flex-1 overflow-hidden">
         {/* Left pane — 70% */}
-        <div className="flex w-[70%] flex-col gap-3 p-4">
-          {/* Search input */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search patients by name, diagnosis, MRN, or notes..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
-            />
-          </div>
-
-          {/* Patient table */}
-          <PatientTable
-            patients={filteredPatients}
-            columns={columns}
-            selectedId={selectedPatient?.id ?? null}
-            onSelect={handleSelectPatient}
-            sortKey={sortKey}
-            sortDir={sortDir}
-            onSort={handleSort}
-          />
-        </div>
-
-        {/* Right pane — 30% with tabs */}
-        <div className="flex w-[30%] flex-col border-l bg-white">
-          {/* Tab bar */}
-          <div className="flex border-b">
-            <button
-              onClick={() => setRightTab("analyst")}
-              className={cn(
-                "flex-1 px-4 py-2.5 text-sm font-medium transition-colors",
-                rightTab === "analyst"
-                  ? "border-b-2 border-primary text-primary"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              Analyst
-            </button>
-            <button
-              onClick={() => setRightTab("chat")}
-              className={cn(
-                "flex-1 px-4 py-2.5 text-sm font-medium transition-colors",
-                rightTab === "chat"
-                  ? "border-b-2 border-primary text-primary"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              Chat
-            </button>
-          </div>
-          {/* Tab content */}
-          <div className="flex-1 overflow-hidden">
-            {rightTab === "analyst" ? (
-              <div className="h-full overflow-y-auto">
-                <AnalystPanel
-                  selectedPatient={selectedPatient}
-                  searchQuery={debouncedQuery}
-                  onSwitchToChat={switchToChat}
+        <div className="w-[70%] p-6">
+          <div className="relative h-full rounded-2xl border border-border/50 bg-card shadow-lg overflow-hidden">
+            {/* Layer 1 — Table view */}
+            <div className={cn("crossfade-layer flex flex-col gap-3 p-4", detailPatient && "hidden-layer")}>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Search patients by name, diagnosis, MRN, or notes..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9"
                 />
               </div>
-            ) : (
-              <ChatPanel
-                selectedPatient={selectedPatient}
-                pendingMessage={pendingChatMessage}
-                onPendingMessageConsumed={() => setPendingChatMessage(null)}
-                onSearchUpdate={handleSearchFromChat}
+              <PatientTable
+                patients={filteredPatients}
+                columns={columns}
+                selectedId={selectedPatient?.id ?? null}
+                onSelect={handleSelectPatient}
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onSort={handleSort}
               />
-            )}
+            </div>
+
+            {/* Layer 2 — Patient detail card */}
+            <div className={cn("crossfade-layer", !detailPatient && "hidden-layer")}>
+              {detailPatient && (
+                <PatientDetailCard patient={detailPatient} onBack={handleBackToTable} />
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Right pane — 30% floating card */}
+        <div className="w-[28%] p-6">
+          <div className="flex h-full flex-col rounded-2xl border border-border/50 bg-card shadow-lg">
+            {/* Tab bar */}
+            <div className="flex border-b border-border/50 rounded-t-2xl overflow-hidden">
+              <button
+                onClick={() => setRightTab("analyst")}
+                className={cn(
+                  "flex-1 px-4 py-2.5 text-sm font-medium transition-colors",
+                  rightTab === "analyst"
+                    ? "border-b-2 border-primary text-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Analyst
+              </button>
+              <button
+                onClick={() => setRightTab("chat")}
+                className={cn(
+                  "flex-1 px-4 py-2.5 text-sm font-medium transition-colors",
+                  rightTab === "chat"
+                    ? "border-b-2 border-primary text-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Chat
+              </button>
+            </div>
+            {/* Tab content */}
+            <div className="flex-1 overflow-hidden">
+              {rightTab === "analyst" ? (
+                <div className="h-full overflow-y-auto">
+                  <AnalystPanel
+                    selectedPatient={selectedPatient}
+                    searchQuery={debouncedQuery}
+                    onSwitchToChat={switchToChat}
+                  />
+                </div>
+              ) : (
+                <ChatPanel
+                  selectedPatient={selectedPatient}
+                  pendingMessage={pendingChatMessage}
+                  onPendingMessageConsumed={() => setPendingChatMessage(null)}
+                  onSearchUpdate={handleSearchFromChat}
+                />
+              )}
+            </div>
           </div>
         </div>
       </div>

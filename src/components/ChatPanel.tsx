@@ -122,56 +122,46 @@ export default function ChatPanel({
   };
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col rounded-2xl bg-card shadow-sm border border-border/50">
       {/* Header */}
-      <div className="flex items-center gap-2 border-b px-4 py-3">
-        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10">
-          <Bot className="h-4 w-4 text-primary" />
+      <div className="px-6 pt-6 pb-4">
+        <div className="flex items-center justify-between">
+          <h1 className="text-lg font-bold tracking-tight text-foreground">
+            Nurse Assistant
+          </h1>
+          {isLoading && (
+            <Loader2 className="h-4 w-4 animate-spin text-foreground" />
+          )}
         </div>
-        <div>
-          <h3 className="text-sm font-semibold">Nurse Assistant</h3>
-          <p className="text-xs text-muted-foreground">
-            {selectedPatient
-              ? `Context: ${selectedPatient.name}`
-              : "No patient selected"}
-          </p>
-        </div>
-        {isLoading && (
-          <Loader2 className="ml-auto h-4 w-4 animate-spin text-primary" />
-        )}
+        <p className="text-sm text-muted-foreground">
+          {selectedPatient
+            ? `Context: ${selectedPatient.name}`
+            : "No patient selected"}
+        </p>
       </div>
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 pb-8 flex flex-col gap-6">
         {messages.map((msg) => (
-          <div key={msg.id} className="space-y-1.5">
-            <div
-              className={cn(
-                "flex gap-2.5",
-                msg.role === "user" ? "justify-end" : "justify-start"
-              )}
-            >
-              {msg.role === "assistant" && (
-                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 mt-0.5">
-                  <Sparkles className="h-3.5 w-3.5 text-primary" />
+          <div key={msg.id} className="flex flex-col gap-1.5">
+            {msg.role === "user" ? (
+              <div className="flex justify-end">
+                <div className="rounded-2xl bg-muted px-4 py-3 text-[15px] text-foreground max-w-[85%]">
+                  <MessageContent content={msg.content} />
                 </div>
-              )}
-              <div
-                className={cn(
-                  "max-w-[85%] rounded-xl px-3.5 py-2.5 text-sm leading-relaxed",
-                  msg.role === "user"
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted/60 text-foreground"
-                )}
-              >
-                <MessageContent content={msg.content} />
               </div>
-              {msg.role === "user" && (
-                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted mt-0.5">
-                  <User className="h-3.5 w-3.5 text-muted-foreground" />
+            ) : (
+              <div className="flex gap-3">
+                <div className="flex-shrink-0 mt-0.5">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
+                    <Sparkles className="h-4 w-4 text-foreground" />
+                  </div>
                 </div>
-              )}
-            </div>
+                <div className="text-[15px] leading-relaxed text-foreground max-w-[85%]">
+                  <MessageContent content={msg.content} />
+                </div>
+              </div>
+            )}
 
             {/* Citations */}
             {msg.role === "assistant" && msg.citations && msg.citations.length > 0 && (
@@ -183,11 +173,13 @@ export default function ChatPanel({
         ))}
 
         {isLoading && (
-          <div className="flex gap-2.5">
-            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 mt-0.5">
-              <Sparkles className="h-3.5 w-3.5 text-primary" />
+          <div className="flex gap-3">
+            <div className="flex-shrink-0 mt-0.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
+                <Sparkles className="h-4 w-4 text-foreground" />
+              </div>
             </div>
-            <div className="rounded-xl bg-muted/60 px-3.5 py-2.5">
+            <div className="rounded-2xl bg-muted px-4 py-3">
               <div className="flex items-center gap-1">
                 <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/40 [animation-delay:0ms]" />
                 <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/40 [animation-delay:150ms]" />
@@ -273,8 +265,8 @@ export default function ChatPanel({
       )}
 
       {/* Input area */}
-      <div className="border-t p-3">
-        <div className="flex items-end gap-2 rounded-lg border bg-background p-1.5 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1">
+      <div className="px-6 pb-6 pt-3">
+        <div className="flex items-end gap-2 rounded-2xl border bg-background p-1.5 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1">
           <textarea
             ref={inputRef}
             value={input}
