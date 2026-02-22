@@ -52,3 +52,15 @@
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(240 3.8% 65%);
 }
+
+/* Cross-fade layers for patient table <-> detail card transition */
+.crossfade-layer {
+  position: absolute;
+  inset: 0;
+  transition: opacity 300ms ease, transform 300ms ease;
+}
+.crossfade-layer.hidden-layer {
+  opacity: 0;
+  transform: scale(0.97);
+  pointer-events: none;
+}
