@@ -527,7 +527,7 @@ export default function App() {
             </div>
 
             {/* Right pane */}
-            <div className="w-[360px] shrink-0 p-4">
+            <div className="w-[460px] shrink-0 p-4">
               <div className="flex h-full flex-col rounded-2xl border border-border/50 bg-card shadow-lg">
                 {/* Tab bar */}
                 <div className="flex border-b border-border/50 rounded-t-2xl overflow-hidden">
