@@ -13,6 +13,7 @@ import type { Patient } from "@/types";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "motion/react";
 import { LoadingAnimation } from "@/components/LoadingAnimation";
+import { OnboardingFlow } from "@/components/onboarding/OnboardingFlow";
 import { Plus, Search, Activity, RefreshCw } from "lucide-react";
 import nurselyLogo from "../assets/images/Nursely_Logo.svg";
 
@@ -91,6 +92,9 @@ export default function App() {
   const [queryColCount, setQueryColCount] = useState(0);
   const [rightTab, setRightTab] = useState<RightPanelTab>("analyst");
   const [showSplash, setShowSplash] = useState(true);
+  const [showOnboarding, setShowOnboarding] = useState(() => {
+    return !localStorage.getItem("nursely-onboarding-complete");
+  });
   const [pendingChatMessage, setPendingChatMessage] = useState<string | null>(
     null,
   );
@@ -304,11 +308,26 @@ export default function App() {
     [selectedPatient?.id, detailPatient?.id],
   );
 
+  const handleOnboardingComplete = useCallback(() => {
+    localStorage.setItem("nursely-onboarding-complete", "true");
+    setShowOnboarding(false);
+  }, []);
+
   return (
     <AnimatePresence mode="wait">
       {showSplash ? (
         <motion.div key="splash" exit={{ opacity: 0 }} transition={{ duration: 0.4 }}>
           <LoadingAnimation onComplete={() => setShowSplash(false)} />
+        </motion.div>
+      ) : showOnboarding ? (
+        <motion.div
+          key="onboarding"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.5, ease: "easeOut" }}
+        >
+          <OnboardingFlow onComplete={handleOnboardingComplete} />
         </motion.div>
       ) : (
         <motion.div
