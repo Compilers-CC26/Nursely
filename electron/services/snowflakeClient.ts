@@ -116,65 +116,75 @@ export async function upsertPatientSnapshot(
 ): Promise<{ rowsWritten: number; snapshotId: string }> {
   let rowsWritten = 0;
 
-  // 1. Patient
+  // 1. Patient first (required for foreign keys)
   if (snapshot.patient) {
     await upsertPatient(snapshot.patient);
     rowsWritten++;
   }
 
-  // 2. Allergies
-  for (const allergy of snapshot.allergies) {
-    await upsertAllergy(allergy);
-    rowsWritten++;
+  // 2. Batch Allergies
+  if (snapshot.allergies.length > 0) {
+    console.log(`[Sync] Batch upserting ${snapshot.allergies.length} allergies...`);
+    await upsertAllergiesBatch(snapshot.allergies);
+    rowsWritten += snapshot.allergies.length;
   }
 
-  // 3. Medications
-  for (const med of snapshot.medications) {
-    await upsertMedication(med);
-    rowsWritten++;
+  // 3. Batch Medications
+  if (snapshot.medications.length > 0) {
+    console.log(`[Sync] Batch upserting ${snapshot.medications.length} medications...`);
+    await upsertMedicationsBatch(snapshot.medications);
+    rowsWritten += snapshot.medications.length;
   }
 
-  // 4. Labs
-  for (const lab of snapshot.labs) {
-    await upsertLab(lab);
-    rowsWritten++;
+  // 4. Batch Labs
+  if (snapshot.labs.length > 0) {
+    console.log(`[Sync] Batch upserting ${snapshot.labs.length} labs...`);
+    await upsertLabsBatch(snapshot.labs);
+    rowsWritten += snapshot.labs.length;
   }
 
-  // 5. Vitals
-  for (const vital of snapshot.vitals) {
-    await upsertVital(vital);
-    rowsWritten++;
+  // 5. Batch Vitals
+  if (snapshot.vitals.length > 0) {
+    console.log(`[Sync] Batch upserting ${snapshot.vitals.length} vitals...`);
+    await upsertVitalsBatch(snapshot.vitals);
+    rowsWritten += snapshot.vitals.length;
   }
 
-  // 6. Notes
-  for (const note of snapshot.notes) {
-    await upsertNote(note);
-    rowsWritten++;
+  // 6. Batch Notes
+  if (snapshot.notes.length > 0) {
+    console.log(`[Sync] Batch upserting ${snapshot.notes.length} notes...`);
+    await upsertNotesBatch(snapshot.notes);
+    rowsWritten += snapshot.notes.length;
   }
 
-  // 7. Raw FHIR storage
-  for (const raw of snapshot.rawResources) {
-    await executeSql(
-      `INSERT INTO fhir_raw (raw_id, patient_id, resource_type, raw_json, ingested_at)
-       SELECT ?, ?, ?, PARSE_JSON(?), CURRENT_TIMESTAMP()
-       WHERE NOT EXISTS (
-         SELECT 1 FROM fhir_raw WHERE raw_id = ?
-       )`,
-      [
-        `${snapshot.patient?.patient_id}-${raw.resource_type}-${Date.now()}`,
-        snapshot.patient?.patient_id ?? "",
-        raw.resource_type,
-        JSON.stringify(raw.raw_json),
-        `${snapshot.patient?.patient_id}-${raw.resource_type}-${Date.now()}`,
-      ]
-    );
+  // 7. Batch Raw FHIR storage
+  if (snapshot.rawResources.length > 0) {
+    const BATCH_SIZE = 20; // Slightly smaller batch for better stability
+    console.log(`[Sync] Batching ${snapshot.rawResources.length} raw resources...`);
+    for (let i = 0; i < snapshot.rawResources.length; i += BATCH_SIZE) {
+      const batch = snapshot.rawResources.slice(i, i + BATCH_SIZE);
+      const sqlParts: string[] = [];
+      const binds: any[] = [];
+
+      batch.forEach((raw, idx) => {
+        const rawId = `${snapshot.patient?.patient_id}-${raw.resource_type}-${Date.now()}-${i + idx}`;
+        sqlParts.push(`SELECT ? AS raw_id, ? AS patient_id, ? AS resource_type, PARSE_JSON(?) AS raw_json, CURRENT_TIMESTAMP() AS ingested_at`);
+        binds.push(rawId, snapshot.patient?.patient_id ?? "", raw.resource_type, JSON.stringify(raw.raw_json));
+      });
+
+      await executeSql(
+        `INSERT INTO fhir_raw (raw_id, patient_id, resource_type, raw_json, ingested_at)
+         ${sqlParts.join(" UNION ALL ")}`,
+        binds
+      );
+    }
   }
 
   // 8. Write snapshot record
   const snapshotId = `snap-${Date.now()}`;
   await executeSql(
     `INSERT INTO patient_snapshots (snapshot_id, patient_id, snapshot_at, lookback_hours, completeness_flags, resource_counts)
-     SELECT ?, ?, CURRENT_TIMESTAMP(), ?, PARSE_JSON(?), PARSE_JSON(?)`,
+     SELECT ?, ?, CURRENT_TIMESTAMP(), ?, PARSE_JSON(?), PARSE_JSON(?) FROM (SELECT 1)`,
     [
       snapshotId,
       snapshot.patient?.patient_id ?? "",
@@ -195,8 +205,6 @@ export async function upsertPatientSnapshot(
   );
   return { rowsWritten, snapshotId };
 }
-
-// Individual MERGE upserts
 
 async function upsertPatient(p: PatientRow) {
   await executeSql(
@@ -223,121 +231,89 @@ async function upsertPatient(p: PatientRow) {
   );
 }
 
-async function upsertAllergy(a: AllergyRow) {
-  await executeSql(
-    `MERGE INTO allergies AS t
-     USING (SELECT ? AS allergy_id, ? AS patient_id, ? AS allergen, ? AS reaction,
-                   ? AS severity, ? AS fhir_resource_type, ? AS fhir_resource_id,
-                   ? AS fhir_last_updated, ? AS source_system) AS s
-     ON t.allergy_id = s.allergy_id
-     WHEN MATCHED THEN UPDATE SET
-       t.allergen = s.allergen, t.reaction = s.reaction, t.severity = s.severity
-     WHEN NOT MATCHED THEN INSERT
-       (allergy_id, patient_id, allergen, reaction, severity,
-        fhir_resource_type, fhir_resource_id, fhir_last_updated, source_system)
-     VALUES (s.allergy_id, s.patient_id, s.allergen, s.reaction, s.severity,
-             s.fhir_resource_type, s.fhir_resource_id, s.fhir_last_updated, s.source_system)`,
-    [
-      a.allergy_id, a.patient_id, a.allergen, a.reaction, a.severity,
-      a.fhir_resource_type, a.fhir_resource_id, a.fhir_last_updated, a.source_system,
-    ]
-  );
+async function upsertAllergiesBatch(allergies: AllergyRow[]) {
+  const BATCH_SIZE = 40;
+  for (let i = 0; i < allergies.length; i += BATCH_SIZE) {
+    const batch = allergies.slice(i, i + BATCH_SIZE);
+    const sqlParts = batch.map(() => `SELECT ? AS allergy_id, ? AS patient_id, ? AS allergen, ? AS reaction, ? AS severity, ? AS fhir_resource_type, ? AS fhir_resource_id, ? AS fhir_last_updated, ? AS source_system`).join(" UNION ALL ");
+    const binds = batch.flatMap(a => [a.allergy_id, a.patient_id, a.allergen, a.reaction, a.severity, a.fhir_resource_type, a.fhir_resource_id, a.fhir_last_updated, a.source_system]);
+    await executeSql(`
+      MERGE INTO allergies AS t
+      USING (${sqlParts}) AS s
+      ON t.allergy_id = s.allergy_id
+      WHEN MATCHED THEN UPDATE SET t.allergen = s.allergen, t.reaction = s.reaction, t.severity = s.severity
+      WHEN NOT MATCHED THEN INSERT (allergy_id, patient_id, allergen, reaction, severity, fhir_resource_type, fhir_resource_id, fhir_last_updated, source_system)
+      VALUES (s.allergy_id, s.patient_id, s.allergen, s.reaction, s.severity, s.fhir_resource_type, s.fhir_resource_id, s.fhir_last_updated, s.source_system)
+    `, binds);
+  }
 }
 
-async function upsertMedication(m: MedicationRow) {
-  await executeSql(
-    `MERGE INTO medications AS t
-     USING (SELECT ? AS medication_id, ? AS patient_id, ? AS medication, ? AS status,
-                   ? AS dosage, ? AS route, ? AS frequency,
-                   ? AS fhir_resource_type, ? AS fhir_resource_id,
-                   ? AS fhir_last_updated, ? AS source_system) AS s
-     ON t.medication_id = s.medication_id
-     WHEN MATCHED THEN UPDATE SET
-       t.medication = s.medication, t.status = s.status, t.dosage = s.dosage,
-       t.route = s.route, t.frequency = s.frequency
-     WHEN NOT MATCHED THEN INSERT
-       (medication_id, patient_id, medication, status, dosage, route, frequency,
-        fhir_resource_type, fhir_resource_id, fhir_last_updated, source_system)
-     VALUES (s.medication_id, s.patient_id, s.medication, s.status, s.dosage, s.route,
-             s.frequency, s.fhir_resource_type, s.fhir_resource_id,
-             s.fhir_last_updated, s.source_system)`,
-    [
-      m.medication_id, m.patient_id, m.medication, m.status, m.dosage,
-      m.route, m.frequency, m.fhir_resource_type, m.fhir_resource_id,
-      m.fhir_last_updated, m.source_system,
-    ]
-  );
+async function upsertMedicationsBatch(meds: MedicationRow[]) {
+  const BATCH_SIZE = 40;
+  for (let i = 0; i < meds.length; i += BATCH_SIZE) {
+    const batch = meds.slice(i, i + BATCH_SIZE);
+    const sqlParts = batch.map(() => `SELECT ? AS medication_id, ? AS patient_id, ? AS medication, ? AS status, ? AS dosage, ? AS route, ? AS frequency, ? AS fhir_resource_type, ? AS fhir_resource_id, ? AS fhir_last_updated, ? AS source_system`).join(" UNION ALL ");
+    const binds = batch.flatMap(m => [m.medication_id, m.patient_id, m.medication, m.status, m.dosage, m.route, m.frequency, m.fhir_resource_type, m.fhir_resource_id, m.fhir_last_updated, m.source_system]);
+    await executeSql(`
+      MERGE INTO medications AS t
+      USING (${sqlParts}) AS s
+      ON t.medication_id = s.medication_id
+      WHEN MATCHED THEN UPDATE SET t.medication = s.medication, t.status = s.status, t.dosage = s.dosage, t.route = s.route, t.frequency = s.frequency
+      WHEN NOT MATCHED THEN INSERT (medication_id, patient_id, medication, status, dosage, route, frequency, fhir_resource_type, fhir_resource_id, fhir_last_updated, source_system)
+      VALUES (s.medication_id, s.patient_id, s.medication, s.status, s.dosage, s.route, s.frequency, s.fhir_resource_type, s.fhir_resource_id, s.fhir_last_updated, s.source_system)
+    `, binds);
+  }
 }
 
-async function upsertLab(l: LabRow) {
-  await executeSql(
-    `MERGE INTO lab_results AS t
-     USING (SELECT ? AS lab_id, ? AS patient_id, ? AS lab_name, ? AS value,
-                   ? AS unit, ? AS flag, ? AS effective_dt,
-                   ? AS fhir_resource_type, ? AS fhir_resource_id,
-                   ? AS fhir_last_updated, ? AS source_system) AS s
-     ON t.lab_id = s.lab_id
-     WHEN MATCHED THEN UPDATE SET
-       t.lab_name = s.lab_name, t.value = s.value, t.unit = s.unit,
-       t.flag = s.flag, t.effective_dt = s.effective_dt
-     WHEN NOT MATCHED THEN INSERT
-       (lab_id, patient_id, lab_name, value, unit, flag, effective_dt,
-        fhir_resource_type, fhir_resource_id, fhir_last_updated, source_system)
-     VALUES (s.lab_id, s.patient_id, s.lab_name, s.value, s.unit, s.flag,
-             s.effective_dt, s.fhir_resource_type, s.fhir_resource_id,
-             s.fhir_last_updated, s.source_system)`,
-    [
-      l.lab_id, l.patient_id, l.lab_name, l.value, l.unit, l.flag,
-      l.effective_dt, l.fhir_resource_type, l.fhir_resource_id,
-      l.fhir_last_updated, l.source_system,
-    ]
-  );
+async function upsertLabsBatch(labs: LabRow[]) {
+  const BATCH_SIZE = 40;
+  for (let i = 0; i < labs.length; i += BATCH_SIZE) {
+    const batch = labs.slice(i, i + BATCH_SIZE);
+    const sqlParts = batch.map(() => `SELECT ? AS lab_id, ? AS patient_id, ? AS lab_name, ? AS value, ? AS unit, ? AS flag, ? AS effective_dt, ? AS fhir_resource_type, ? AS fhir_resource_id, ? AS fhir_last_updated, ? AS source_system`).join(" UNION ALL ");
+    const binds = batch.flatMap(l => [l.lab_id, l.patient_id, l.lab_name, l.value, l.unit, l.flag, l.effective_dt, l.fhir_resource_type, l.fhir_resource_id, l.fhir_last_updated, l.source_system]);
+    await executeSql(`
+      MERGE INTO lab_results AS t
+      USING (${sqlParts}) AS s
+      ON t.lab_id = s.lab_id
+      WHEN MATCHED THEN UPDATE SET t.lab_name = s.lab_name, t.value = s.value, t.unit = s.unit, t.flag = s.flag, t.effective_dt = s.effective_dt
+      WHEN NOT MATCHED THEN INSERT (lab_id, patient_id, lab_name, value, unit, flag, effective_dt, fhir_resource_type, fhir_resource_id, fhir_last_updated, source_system)
+      VALUES (s.lab_id, s.patient_id, s.lab_name, s.value, s.unit, s.flag, s.effective_dt, s.fhir_resource_type, s.fhir_resource_id, s.fhir_last_updated, s.source_system)
+    `, binds);
+  }
 }
 
-async function upsertVital(v: VitalRow) {
-  await executeSql(
-    `MERGE INTO vitals AS t
-     USING (SELECT ? AS vital_id, ? AS patient_id, ? AS hr, ? AS bp_sys, ? AS bp_dia,
-                   ? AS rr, ? AS temp, ? AS spo2, ? AS effective_dt,
-                   ? AS fhir_resource_type, ? AS fhir_resource_id,
-                   ? AS fhir_last_updated, ? AS source_system) AS s
-     ON t.vital_id = s.vital_id
-     WHEN MATCHED THEN UPDATE SET
-       t.hr = s.hr, t.bp_sys = s.bp_sys, t.bp_dia = s.bp_dia,
-       t.rr = s.rr, t.temp = s.temp, t.spo2 = s.spo2, t.effective_dt = s.effective_dt
-     WHEN NOT MATCHED THEN INSERT
-       (vital_id, patient_id, hr, bp_sys, bp_dia, rr, temp, spo2, effective_dt,
-        fhir_resource_type, fhir_resource_id, fhir_last_updated, source_system)
-     VALUES (s.vital_id, s.patient_id, s.hr, s.bp_sys, s.bp_dia, s.rr, s.temp, s.spo2,
-             s.effective_dt, s.fhir_resource_type, s.fhir_resource_id,
-             s.fhir_last_updated, s.source_system)`,
-    [
-      v.vital_id, v.patient_id, v.hr, v.bp_sys, v.bp_dia, v.rr, v.temp, v.spo2,
-      v.effective_dt, v.fhir_resource_type, v.fhir_resource_id,
-      v.fhir_last_updated, v.source_system,
-    ]
-  );
+async function upsertVitalsBatch(vitals: VitalRow[]) {
+  const BATCH_SIZE = 40;
+  for (let i = 0; i < vitals.length; i += BATCH_SIZE) {
+    const batch = vitals.slice(i, i + BATCH_SIZE);
+    const sqlParts = batch.map(() => `SELECT ? AS vital_id, ? AS patient_id, ? AS hr, ? AS bp_sys, ? AS bp_dia, ? AS rr, ? AS temp, ? AS spo2, ? AS effective_dt, ? AS fhir_resource_type, ? AS fhir_resource_id, ? AS fhir_last_updated, ? AS source_system`).join(" UNION ALL ");
+    const binds = batch.flatMap(v => [v.vital_id, v.patient_id, v.hr, v.bp_sys, v.bp_dia, v.rr, v.temp, v.spo2, v.effective_dt, v.fhir_resource_type, v.fhir_resource_id, v.fhir_last_updated, v.source_system]);
+    await executeSql(`
+      MERGE INTO vitals AS t
+      USING (${sqlParts}) AS s
+      ON t.vital_id = s.vital_id
+      WHEN MATCHED THEN UPDATE SET t.hr = s.hr, t.bp_sys = s.bp_sys, t.bp_dia = s.bp_dia, t.rr = s.rr, t.temp = s.temp, t.spo2 = s.spo2, t.effective_dt = s.effective_dt
+      WHEN NOT MATCHED THEN INSERT (vital_id, patient_id, hr, bp_sys, bp_dia, rr, temp, spo2, effective_dt, fhir_resource_type, fhir_resource_id, fhir_last_updated, source_system)
+      VALUES (s.vital_id, s.patient_id, s.hr, s.bp_sys, s.bp_dia, s.rr, s.temp, s.spo2, s.effective_dt, s.fhir_resource_type, s.fhir_resource_id, s.fhir_last_updated, s.source_system)
+    `, binds);
+  }
 }
 
-async function upsertNote(n: NoteRow) {
-  await executeSql(
-    `MERGE INTO nursing_notes AS t
-     USING (SELECT ? AS note_id, ? AS patient_id, ? AS note_text, ? AS author,
-                   ? AS note_dt, ? AS fhir_resource_type, ? AS fhir_resource_id,
-                   ? AS fhir_last_updated, ? AS source_system) AS s
-     ON t.note_id = s.note_id
-     WHEN MATCHED THEN UPDATE SET
-       t.note_text = s.note_text, t.author = s.author, t.note_dt = s.note_dt
-     WHEN NOT MATCHED THEN INSERT
-       (note_id, patient_id, note_text, author, note_dt,
-        fhir_resource_type, fhir_resource_id, fhir_last_updated, source_system)
-     VALUES (s.note_id, s.patient_id, s.note_text, s.author, s.note_dt,
-             s.fhir_resource_type, s.fhir_resource_id, s.fhir_last_updated, s.source_system)`,
-    [
-      n.note_id, n.patient_id, n.note_text, n.author, n.note_dt,
-      n.fhir_resource_type, n.fhir_resource_id, n.fhir_last_updated, n.source_system,
-    ]
-  );
+async function upsertNotesBatch(notes: NoteRow[]) {
+  const BATCH_SIZE = 40;
+  for (let i = 0; i < notes.length; i += BATCH_SIZE) {
+    const batch = notes.slice(i, i + BATCH_SIZE);
+    const sqlParts = batch.map(() => `SELECT ? AS note_id, ? AS patient_id, ? AS note_text, ? AS author, ? AS note_dt, ? AS fhir_resource_type, ? AS fhir_resource_id, ? AS fhir_last_updated, ? AS source_system`).join(" UNION ALL ");
+    const binds = batch.flatMap(n => [n.note_id, n.patient_id, n.note_text, n.author, n.note_dt, n.fhir_resource_type, n.fhir_resource_id, n.fhir_last_updated, n.source_system]);
+    await executeSql(`
+      MERGE INTO nursing_notes AS t
+      USING (${sqlParts}) AS s
+      ON t.note_id = s.note_id
+      WHEN MATCHED THEN UPDATE SET t.note_text = s.note_text, t.author = s.author, t.note_dt = s.note_dt
+      WHEN NOT MATCHED THEN INSERT (note_id, patient_id, note_text, author, note_dt, fhir_resource_type, fhir_resource_id, fhir_last_updated, source_system)
+      VALUES (s.note_id, s.patient_id, s.note_text, s.author, s.note_dt, s.fhir_resource_type, s.fhir_resource_id, s.fhir_last_updated, s.source_system)
+    `, binds);
+  }
 }
 
 // ── Query operations ──

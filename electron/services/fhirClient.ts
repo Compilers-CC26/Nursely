@@ -9,7 +9,7 @@
 import type { FHIRBundle, FHIRResource } from "./fhirTypes";
 
 const FHIR_BASE =
-  process.env.FHIR_BASE_URL || "https://synthea.mitre.org/fhir";
+  process.env.FHIR_BASE_URL || "https://r4.smarthealthit.org";
 
 // Session cache: patientId → bundle
 const bundleCache = new Map<string, { bundle: FHIRBundle; fetchedAt: Date }>();
@@ -86,28 +86,37 @@ async function fetchResources(
   resourceType: string
 ): Promise<FHIRResource[]> {
   const paramName = resourceType === "Patient" ? "_id" : "patient";
-  const url = `${FHIR_BASE}/${resourceType}?${paramName}=${patientId}&_count=100`;
+  // Use clinical/standard URL format
+  const url = resourceType === "Patient"
+    ? `${FHIR_BASE}/Patient/${patientId}`
+    : `${FHIR_BASE}/${resourceType}?${paramName}=${patientId}&_count=100`;
 
-  const response = await fetch(url, {
-    headers: { Accept: "application/fhir+json" },
-  });
+  try {
+    const response = await fetch(url, {
+      headers: {
+        Accept: "application/fhir+json",
+        "User-Agent": "PatientAnalyst/1.0.0 (Electron; ClinicalAssistant)"
+      },
+    });
 
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    if (!response.ok) {
+      console.warn(`[FHIR] Fetch failed for ${resourceType} (${response.status}).`);
+      return [];
+    }
+
+    const data = await response.json();
+
+    if (data.resourceType === "Bundle" && data.entry) {
+      return data.entry.map((e: any) => e.resource);
+    } else if (data.resourceType === resourceType) {
+      return [data];
+    }
+
+    return [];
+  } catch (err) {
+    console.warn(`[FHIR] Network error for ${resourceType}:`, err);
+    return [];
   }
-
-  const data = await response.json();
-
-  if (data.resourceType === "Bundle" && data.entry) {
-    return data.entry.map((e: any) => e.resource);
-  }
-
-  // Single resource response (e.g., Patient by _id)
-  if (data.resourceType === resourceType) {
-    return [data];
-  }
-
-  return [];
 }
 
 /**

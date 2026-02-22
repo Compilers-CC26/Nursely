@@ -12,16 +12,16 @@ USE WAREHOUSE COMPUTE_WH;
 
 -- 2. CREATE TABLES (Atomic Create or Replace)
 CREATE OR REPLACE TABLE patients (
-    patient_id          VARCHAR(64)   PRIMARY KEY,
+    patient_id          VARCHAR(128)   PRIMARY KEY,
     name                VARCHAR(200)  NOT NULL,
     age                 INT,
-    sex                 VARCHAR(10),
+    sex                 VARCHAR(1),
     room                VARCHAR(20),
     mrn                 VARCHAR(50),
     diagnosis           VARCHAR(500),
     summary             VARCHAR(2000),
     risk_score          FLOAT,
-    fhir_resource_id    VARCHAR(200),
+    fhir_resource_id    VARCHAR(128),
     fhir_last_updated   TIMESTAMP_NTZ,
     source_system       VARCHAR(50)   DEFAULT 'SyntheaFHIR',
     created_at          TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
@@ -29,51 +29,51 @@ CREATE OR REPLACE TABLE patients (
 );
 
 CREATE OR REPLACE TABLE allergies (
-    allergy_id          VARCHAR(64)   PRIMARY KEY,
-    patient_id          VARCHAR(64)   NOT NULL REFERENCES patients(patient_id),
-    allergen            VARCHAR(500)  NOT NULL,
+    allergy_id          VARCHAR(128)   PRIMARY KEY,
+    patient_id          VARCHAR(128)   NOT NULL REFERENCES patients(patient_id),
+    allergen            VARCHAR(200)  NOT NULL,
     reaction            VARCHAR(500),
     severity            VARCHAR(50),
-    fhir_resource_type  VARCHAR(50)   DEFAULT 'AllergyIntolerance',
-    fhir_resource_id    VARCHAR(200),
+    fhir_resource_type  VARCHAR(100)   DEFAULT 'AllergyIntolerance',
+    fhir_resource_id    VARCHAR(128),
     fhir_last_updated   TIMESTAMP_NTZ,
     source_system       VARCHAR(50)   DEFAULT 'SyntheaFHIR',
     created_at          TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
 );
 
 CREATE OR REPLACE TABLE medications (
-    medication_id       VARCHAR(64)   PRIMARY KEY,
-    patient_id          VARCHAR(64)   NOT NULL REFERENCES patients(patient_id),
-    medication          VARCHAR(500)  NOT NULL,
+    medication_id       VARCHAR(128)   PRIMARY KEY,
+    patient_id          VARCHAR(128)   NOT NULL REFERENCES patients(patient_id),
+    medication          VARCHAR(200)  NOT NULL,
     status              VARCHAR(50),
-    dosage              VARCHAR(200),
+    dosage              VARCHAR(500),
     route               VARCHAR(100),
     frequency           VARCHAR(200),
-    fhir_resource_type  VARCHAR(50)   DEFAULT 'MedicationRequest',
-    fhir_resource_id    VARCHAR(200),
+    fhir_resource_type  VARCHAR(100)   DEFAULT 'MedicationRequest',
+    fhir_resource_id    VARCHAR(128),
     fhir_last_updated   TIMESTAMP_NTZ,
     source_system       VARCHAR(50)   DEFAULT 'SyntheaFHIR',
     created_at          TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
 );
 
 CREATE OR REPLACE TABLE lab_results (
-    lab_id              VARCHAR(64)   PRIMARY KEY,
-    patient_id          VARCHAR(64)   NOT NULL REFERENCES patients(patient_id),
+    lab_id              VARCHAR(128)   PRIMARY KEY,
+    patient_id          VARCHAR(128)   NOT NULL REFERENCES patients(patient_id),
     lab_name            VARCHAR(200)  NOT NULL,
     value               VARCHAR(100),
     unit                VARCHAR(50),
     flag                VARCHAR(20),
     effective_dt        TIMESTAMP_NTZ,
-    fhir_resource_type  VARCHAR(50)   DEFAULT 'Observation',
-    fhir_resource_id    VARCHAR(200),
+    fhir_resource_type  VARCHAR(100)   DEFAULT 'Observation',
+    fhir_resource_id    VARCHAR(128),
     fhir_last_updated   TIMESTAMP_NTZ,
     source_system       VARCHAR(50)   DEFAULT 'SyntheaFHIR',
     created_at          TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
 );
 
 CREATE OR REPLACE TABLE vitals (
-    vital_id            VARCHAR(64)   PRIMARY KEY,
-    patient_id          VARCHAR(64)   NOT NULL REFERENCES patients(patient_id),
+    vital_id            VARCHAR(128)   PRIMARY KEY,
+    patient_id          VARCHAR(128)   NOT NULL REFERENCES patients(patient_id),
     hr                  FLOAT,
     bp_sys              FLOAT,
     bp_dia              FLOAT,
@@ -81,29 +81,29 @@ CREATE OR REPLACE TABLE vitals (
     temp                FLOAT,
     spo2                FLOAT,
     effective_dt        TIMESTAMP_NTZ,
-    fhir_resource_type  VARCHAR(50)   DEFAULT 'Observation',
-    fhir_resource_id    VARCHAR(200),
+    fhir_resource_type  VARCHAR(100)   DEFAULT 'Observation',
+    fhir_resource_id    VARCHAR(128),
     fhir_last_updated   TIMESTAMP_NTZ,
     source_system       VARCHAR(50)   DEFAULT 'SyntheaFHIR',
     created_at          TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
 );
 
 CREATE OR REPLACE TABLE nursing_notes (
-    note_id             VARCHAR(64)   PRIMARY KEY,
-    patient_id          VARCHAR(64)   NOT NULL REFERENCES patients(patient_id),
+    note_id             VARCHAR(128)   PRIMARY KEY,
+    patient_id          VARCHAR(128)   NOT NULL REFERENCES patients(patient_id),
     note_text           VARCHAR(10000),
     author              VARCHAR(200),
     note_dt             TIMESTAMP_NTZ,
-    fhir_resource_type  VARCHAR(50)   DEFAULT 'DocumentReference',
-    fhir_resource_id    VARCHAR(200),
+    fhir_resource_type  VARCHAR(100)   DEFAULT 'DocumentReference',
+    fhir_resource_id    VARCHAR(128),
     fhir_last_updated   TIMESTAMP_NTZ,
     source_system       VARCHAR(50)   DEFAULT 'SyntheaFHIR',
     created_at          TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
 );
 
 CREATE OR REPLACE TABLE patient_snapshots (
-    snapshot_id         VARCHAR(64)   PRIMARY KEY,
-    patient_id          VARCHAR(64)   NOT NULL REFERENCES patients(patient_id),
+    snapshot_id         VARCHAR(128)   PRIMARY KEY,
+    patient_id          VARCHAR(128)   NOT NULL REFERENCES patients(patient_id),
     snapshot_at         TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
     lookback_hours      INT           DEFAULT 72,
     completeness_flags  VARIANT,
@@ -122,9 +122,9 @@ CREATE OR REPLACE TABLE knowledge_base (
 );
 
 CREATE OR REPLACE TABLE fhir_raw (
-    raw_id              VARCHAR(64)   PRIMARY KEY,
-    patient_id          VARCHAR(64)   NOT NULL,
-    resource_type       VARCHAR(50),
+    raw_id              VARCHAR(256)  PRIMARY KEY,
+    patient_id          VARCHAR(128)  NOT NULL,
+    resource_type       VARCHAR(100),
     raw_json            VARIANT,
     ingested_at         TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
 );
@@ -185,6 +185,7 @@ BEGIN
     ORDER BY snapshot_at DESC
     LIMIT 1;
 
+    -- Build patient context string from multiple tables using explicit scoping
     SELECT LISTAGG(line, '\n') WITHIN GROUP (ORDER BY section_order)
     INTO :v_patient_context
     FROM (
@@ -197,18 +198,31 @@ BEGIN
         SELECT 3, 'MEDICATIONS: ' || COALESCE(LISTAGG(medication, ', '), 'None documented')
         FROM medications WHERE patient_id = :p_patient_id
         UNION ALL
-        SELECT 4, 'LATEST VITALS: HR=' || COALESCE(TO_VARCHAR(hr), '?') FROM vitals WHERE patient_id = :p_patient_id ORDER BY effective_dt DESC LIMIT 1
+        SELECT 4, 'LATEST VITALS: HR=' || COALESCE(TO_VARCHAR(v.hr), '?') || ', BP=' || COALESCE(TO_VARCHAR(v.bp_sys), '?') || '/' || COALESCE(TO_VARCHAR(v.bp_dia), '?')
+        FROM (SELECT hr, bp_sys, bp_dia FROM vitals WHERE patient_id = :p_patient_id ORDER BY effective_dt DESC LIMIT 1) AS v
     );
 
-    v_search_results := (SELECT SNOWFLAKE.CORTEX.SEARCH_PREVIEW('knowledge_search', :p_question, 3));
+    -- Get search results from cortex search service
+    BEGIN
+        v_search_results := (SELECT SNOWFLAKE.CORTEX.SEARCH_PREVIEW('knowledge_search', :p_question, 3));
+    EXCEPTION
+        WHEN OTHER THEN
+            v_search_results := OBJECT_CONSTRUCT('results', ARRAY_CONSTRUCT());
+    END;
 
-    v_prompt := 'Patient Data: ' || COALESCE(:v_patient_context, 'No records.') ||
-                '\n\nProtocols: ' || TO_VARCHAR(:v_search_results) ||
-                '\n\nQuestion: ' || :p_question;
+    v_prompt := 'Patient Data: ' || COALESCE(:v_patient_context, 'No records found for this patient ID.') ||
+                '\n\nRelevant Protocols: ' || TO_VARCHAR(:v_search_results) ||
+                '\n\nQuestion: ' || :p_question ||
+                '\n\nRespond as a helpful clinical assistant. Provide specific guidance based on data and protocols.';
 
     v_answer := (SELECT SNOWFLAKE.CORTEX.COMPLETE('mistral-large', :v_prompt));
 
-    v_result := OBJECT_CONSTRUCT('answer', :v_answer, 'data_as_of', :v_snapshot_at, 'completeness_flags', :v_completeness);
+    v_result := OBJECT_CONSTRUCT(
+        'answer', :v_answer,
+        'data_as_of', :v_snapshot_at,
+        'completeness_flags', :v_completeness,
+        'search_results', :v_search_results
+    );
     RETURN :v_result;
 EXCEPTION
     WHEN OTHER THEN

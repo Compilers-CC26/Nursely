@@ -40,7 +40,10 @@ export function transformBundle(
   lookbackHours = 72
 ): TransformedSnapshot {
   const resources = bundle.entry.map((e) => e.resource);
-  const cutoff = new Date(Date.now() - lookbackHours * 60 * 60 * 1000);
+  // For demo purposes, we disable the strict 72h lookback to ensure
+  // historical data from sandboxes (SMART/Synthea) is included.
+  // const cutoff = new Date(Date.now() - lookbackHours * 60 * 60 * 1000);
+  const cutoff = new Date(0); // Epoch start = include everything
 
   // Group resources by type
   const byType = new Map<string, FHIRResource[]>();
@@ -76,8 +79,13 @@ export function transformBundle(
   const rawVitals: FHIRResource[] = [];
   const rawLabs: FHIRResource[] = [];
   for (const obs of observations) {
-    const code = obs.code?.coding?.[0]?.code;
-    if (code && VITAL_CODES.has(code)) {
+    const codings = obs.code?.coding ?? [];
+    const isVitalCode = codings.some(c => c.code && VITAL_CODES.has(c.code));
+    const isVitalCategory = obs.category?.some((cat: any) =>
+      cat.coding?.some((c: any) => c.code === "vital-signs")
+    );
+
+    if (isVitalCode || isVitalCategory) {
       rawVitals.push(obs);
     } else {
       rawLabs.push(obs);
@@ -231,10 +239,10 @@ function transformLab(patientId: string, resource: FHIRResource): LabRow {
 
   // Determine flag from interpretation or reference range
   let flag = "normal";
-  const interp = resource.interpretation?.[0]?.coding?.[0]?.code;
-  if (interp === "H" || interp === "HH") flag = interp === "HH" ? "critical" : "high";
-  else if (interp === "L" || interp === "LL") flag = interp === "LL" ? "critical" : "low";
-  else if (interp === "A" || interp === "AA") flag = interp === "AA" ? "critical" : "high";
+  const interp = resource.interpretation?.[0]?.coding?.[0]?.code || resource.interpretation?.[0]?.text;
+  if (interp === "H" || interp === "HH" || String(interp).includes("High")) flag = interp === "HH" ? "critical" : "high";
+  else if (interp === "L" || interp === "LL" || String(interp).includes("Low")) flag = interp === "LL" ? "critical" : "low";
+  else if (interp === "A" || interp === "AA" || String(interp).includes("Abnormal")) flag = "high";
 
   return {
     lab_id: resource.id,
@@ -282,22 +290,27 @@ function groupVitals(
       source_system: SOURCE_SYSTEM,
     };
 
-    const code = obs.code?.coding?.[0]?.code;
+    const codings = obs.code?.coding ?? [];
     const value = obs.valueQuantity?.value;
 
-    if (code === "8867-4") existing.hr = value ?? null;
-    else if (code === "8480-6") existing.bp_sys = value ?? null;
-    else if (code === "8462-4") existing.bp_dia = value ?? null;
-    else if (code === "9279-1") existing.rr = value ?? null;
-    else if (code === "8310-5") existing.temp = value ?? null;
-    else if (code === "2708-6") existing.spo2 = value ?? null;
-    else if (code === "85354-9") {
-      // Blood pressure panel — extract systolic/diastolic from components
+    codings.forEach(c => {
+      const code = c.code;
+      if (code === "8867-4") existing.hr = value ?? null;
+      else if (code === "8480-6") existing.bp_sys = value ?? null;
+      else if (code === "8462-4") existing.bp_dia = value ?? null;
+      else if (code === "9279-1") existing.rr = value ?? null;
+      else if (code === "8310-5") existing.temp = value ?? null;
+      else if (code === "2708-6") existing.spo2 = value ?? null;
+    });
+
+    // Blood pressure panel — extract systolic/diastolic from components if direct code missing
+    if (codings.some(c => c.code === "85354-9")) {
       const components = obs.component ?? [];
       for (const comp of components) {
-        const compCode = comp.code?.coding?.[0]?.code;
-        if (compCode === "8480-6") existing.bp_sys = comp.valueQuantity?.value ?? null;
-        else if (compCode === "8462-4") existing.bp_dia = comp.valueQuantity?.value ?? null;
+        const compCodings = comp.code?.coding ?? [];
+        const compValue = comp.valueQuantity?.value ?? null;
+        if (compCodings.some(cc => cc.code === "8480-6")) existing.bp_sys = compValue;
+        else if (compCodings.some(cc => cc.code === "8462-4")) existing.bp_dia = compValue;
       }
     }
 
