@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { listPatients, searchPatients } from "@/services/fhirMock";
 import type { Patient } from "@/types";
 import { cn } from "@/lib/utils";
-import { Plus, Search } from "lucide-react";
+import { Plus, Search, Activity, RefreshCw } from "lucide-react";
 
 type RightPanelTab = "analyst" | "chat";
 
@@ -47,9 +47,72 @@ export default function App() {
   const [rightTab, setRightTab] = useState<RightPanelTab>("analyst");
   const [pendingChatMessage, setPendingChatMessage] = useState<string | null>(null);
 
+  // Data State
+  const [liveCensus, setLiveCensus] = useState<Patient[]>([]);
+  const [censusStatus, setCensusStatus] = useState<"loading" | "ready" | "error">("loading");
+
+  // Sync State
+  const [preseedStatus, setPreseedStatus] = useState<"idle" | "syncing" | "done" | "error">("idle");
+  const [preseedProgress, setPreseedProgress] = useState({ synced: 0, total: 0 });
+
+  // --- Effects ---
+  // 1. Fetch live census on launch, then 2. Pre-seed Snowflake
+  useEffect(() => {
+    if (window.electronAPI?.fhir?.getCensus) {
+      setCensusStatus("loading");
+      window.electronAPI.fhir.getCensus()
+        .then((res) => {
+          if (res.success && res.census) {
+            setLiveCensus(res.census);
+            setCensusStatus("ready");
+
+            // Now that we have the census, start the background Snowflake sync
+            if (window.electronAPI?.snowflake?.preseedCohort) {
+              setPreseedStatus("syncing");
+              const patientIds = res.census.map((p: Patient) => p.id);
+              setPreseedProgress({ synced: 0, total: patientIds.length });
+
+              window.electronAPI.snowflake.preseedCohort(patientIds)
+                .then((syncRes) => {
+                  if (syncRes.success) {
+                    setPreseedStatus("done");
+                    setPreseedProgress({ synced: syncRes.synced, total: syncRes.total });
+                  } else {
+                    setPreseedStatus("error");
+                  }
+                })
+                .catch(() => setPreseedStatus("error"));
+            }
+          } else {
+            console.warn("Failed to get live census, using mock fallback.");
+            setLiveCensus(listPatients());
+            setCensusStatus("ready");
+          }
+        })
+        .catch(() => {
+          setLiveCensus(listPatients());
+          setCensusStatus("ready");
+        });
+    } else {
+      // Browser environment fallback
+      setLiveCensus(listPatients());
+      setCensusStatus("ready");
+    }
+  }, []);
+
   // --- Data ---
   const filteredPatients = useMemo(() => {
-    const base = debouncedQuery ? searchPatients(debouncedQuery) : listPatients();
+    let base = liveCensus;
+    if (debouncedQuery) {
+      const q = debouncedQuery.toLowerCase();
+      base = base.filter((p) =>
+        p.name.toLowerCase().includes(q) ||
+        p.mrn.toLowerCase().includes(q) ||
+        p.diagnosis.toLowerCase().includes(q) ||
+        p.summary.toLowerCase().includes(q) ||
+        p.notes.some(n => n.toLowerCase().includes(q))
+      );
+    }
     return [...base].sort((a, b) => {
       const aVal = (a as any)[sortKey];
       const bVal = (b as any)[sortKey];
@@ -62,7 +125,7 @@ export default function App() {
       }
       return sortDir === "asc" ? aVal - bVal : bVal - aVal;
     });
-  }, [debouncedQuery, sortKey, sortDir]);
+  }, [liveCensus, debouncedQuery, sortKey, sortDir]);
 
   // --- Handlers ---
   const handleSort = useCallback(
@@ -120,9 +183,29 @@ export default function App() {
           <h1 className="text-xl font-semibold tracking-tight text-foreground">
             Search results
           </h1>
-          <Badge variant="success" className="text-xs">
-            Ready
-          </Badge>
+          {censusStatus === "loading" ? (
+            <Badge variant="outline" className="text-xs text-muted-foreground animate-pulse">
+              <RefreshCw className="mr-1 h-3 w-3 animate-spin inline" />
+              Loading FHIR Census...
+            </Badge>
+          ) : (
+            <Badge variant="success" className="text-xs">
+              Live Census
+            </Badge>
+          )}
+
+          {preseedStatus === "syncing" && (
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-100 text-[10px] font-medium text-amber-700 animate-pulse">
+              <RefreshCw className="h-2.5 w-2.5 animate-spin" />
+              Pre-seeding Snowflake ({preseedProgress.synced}/{preseedProgress.total})
+            </div>
+          )}
+          {preseedStatus === "done" && (
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-100 text-[10px] font-medium text-emerald-700">
+              <Activity className="h-2.5 w-2.5" />
+              Snowflake DB hydrated
+            </div>
+          )}
           <span className="text-sm text-muted-foreground">
             {filteredPatients.length.toLocaleString()} results
           </span>

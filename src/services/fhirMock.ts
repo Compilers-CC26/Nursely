@@ -1,45 +1,26 @@
 /**
- * FHIR Service — Renderer-side patient data access
+ * FHIR Service — Renderer-side IPC wrapper
  *
- * Uses Electron IPC when available (sync-on-select from live FHIR),
- * falls back to local seed data in browser dev mode.
+ * Uses Electron IPC when available to fetch live dynamic census
+ * and sync individual patients to Snowflake. Local static seed
+ * data has been removed in favor of the dynamic BFF approach.
  */
 
 import type { Patient } from "@/types";
-import patientsData from "../../seed/patients.json";
-
-const localPatients: Patient[] = patientsData as Patient[];
 
 /** Check if running inside Electron with IPC available */
 function hasElectronAPI(): boolean {
   return typeof window !== "undefined" && !!window.electronAPI?.fhir;
 }
 
-/** Return all patients (local seed for table, always available) */
+/** Return empty array for browser dev mode fallback */
 export function listPatients(): Patient[] {
-  return localPatients;
+  return [];
 }
 
-/**
- * Search patients by query string.
- * Always uses local seed data for fast filtering.
- */
+/** Return empty array for browser dev mode fallback */
 export function searchPatients(query: string): Patient[] {
-  if (!query.trim()) return localPatients;
-  const q = query.toLowerCase();
-  return localPatients.filter(
-    (p) =>
-      p.name.toLowerCase().includes(q) ||
-      p.diagnosis.toLowerCase().includes(q) ||
-      p.summary.toLowerCase().includes(q) ||
-      p.mrn.toLowerCase().includes(q) ||
-      p.notes.some((n) => n.toLowerCase().includes(q))
-  );
-}
-
-/** Get a single patient by ID (local) */
-export function getPatient(id: string): Patient | undefined {
-  return localPatients.find((p) => p.id === id);
+  return [];
 }
 
 /**

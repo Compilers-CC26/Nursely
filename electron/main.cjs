@@ -64,12 +64,14 @@ async function getBackendServices() {
     const fhirTransformer = require("./services/fhirTransformer");
     const snowflakeClient = require("./services/snowflakeClient");
     const syncOrchestrator = require("./services/syncOrchestrator");
+    const censusService = require("./services/censusService");
 
     backendServices = {
       fhirClient,
       fhirTransformer,
       snowflakeClient,
       syncOrchestrator,
+      censusService,
     };
 
     console.log("[Main] Backend services loaded successfully");
@@ -104,6 +106,20 @@ ipcMain.handle("fhir:fetch-patient-list", async (_event, count) => {
     const patients = await services.fhirClient.fetchPatientList(count);
     return { success: true, patients };
   } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle("fhir:get-census", async () => {
+  try {
+    const services = await getBackendServices();
+    if (!services) {
+      return { success: false, error: "Backend services not available" };
+    }
+    const census = await services.censusService.getCensus();
+    return { success: true, census };
+  } catch (err) {
+    console.error("[Main] IPC: fhir:get-census error:", err);
     return { success: false, error: err.message };
   }
 });
@@ -158,15 +174,17 @@ ipcMain.handle(
   }
 );
 
-ipcMain.handle("snowflake:cohort-summary", async () => {
+ipcMain.handle("snowflake:preseed-cohort", async (_event, patientIds) => {
   try {
+    console.log(`[Main] IPC: snowflake:preseed-cohort (${patientIds.length} patients)`);
     const services = await getBackendServices();
     if (!services) {
       return { success: false, error: "Backend services not available" };
     }
-    const summary = await services.snowflakeClient.getCohortSummary();
-    return { success: true, summary };
+    const result = await services.syncOrchestrator.preseedCohort(patientIds);
+    return { success: true, ...result };
   } catch (err) {
+    console.error(`[Main] IPC: snowflake:preseed-cohort error:`, err);
     return { success: false, error: err.message };
   }
 });

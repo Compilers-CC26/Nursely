@@ -16,6 +16,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
     fetchPatientList: (count) =>
       ipcRenderer.invoke("fhir:fetch-patient-list", count),
 
+    /** Get the dynamically built rich in-memory census */
+    getCensus: () => ipcRenderer.invoke("fhir:get-census"),
+
     /** Clear the FHIR session cache */
     clearCache: () => ipcRenderer.invoke("fhir:clear-cache"),
   },
@@ -37,6 +40,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
     /** Get cohort-level analytics from Snowflake */
     getCohortSummary: () =>
       ipcRenderer.invoke("snowflake:cohort-summary"),
+
+    /** Pre-seed multiple patients in the background */
+    preseedCohort: (patientIds) =>
+      ipcRenderer.invoke("snowflake:preseed-cohort", patientIds),
 
     /** Check if Snowflake connection is available */
     getStatus: () => ipcRenderer.invoke("snowflake:status"),

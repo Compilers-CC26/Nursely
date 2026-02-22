@@ -380,6 +380,105 @@ export async function getCohortSummary(): Promise<any> {
 }
 
 /**
+ * Get the latest sync timestamp for a patient.
+ */
+export async function getLastSyncTime(patientId: string): Promise<Date | null> {
+  const rows = await executeSql(`
+    SELECT DATE_PART(epoch_millisecond, snapshot_at) as snapshot_ms
+    FROM patient_snapshots
+    WHERE patient_id = ?
+    ORDER BY snapshot_at DESC
+    LIMIT 1
+  `, [patientId]);
+
+  if (rows.length === 0) return null;
+  return new Date(Number(rows[0].SNAPSHOT_MS));
+}
+
+/**
+ * Check if a patient was synced within a lookback window.
+ */
+export async function isPatientSyncedRecent(patientId: string, minutesThreshold = 10): Promise<boolean> {
+  const lastSync = await getLastSyncTime(patientId);
+  if (!lastSync) return false;
+
+  const diffMs = Date.now() - lastSync.getTime();
+  const diffMin = diffMs / (1000 * 60);
+  return diffMin < minutesThreshold;
+}
+
+/**
+ * Retrieve the current patient census directly from Snowflake.
+ * Used for instant app launch before background FHIR updates.
+ */
+export async function getCensusFromSnowflake(): Promise<any[]> {
+  const sql = `
+    SELECT
+      p.patient_id, p.name, p.age, p.sex, p.room, p.mrn, p.diagnosis, p.summary, p.risk_score,
+      v.vitals_obj AS vitals,
+      l.labs_arr AS labs,
+      m.meds_arr AS meds,
+      a.allergies_arr AS allergies,
+      n.notes_arr AS notes
+    FROM patients p
+    LEFT JOIN (
+      SELECT patient_id,
+        OBJECT_CONSTRUCT(
+          'hr', hr, 'bpSys', bp_sys, 'bpDia', bp_dia, 'rr', rr, 'temp', temp, 'spo2', spo2, 'timestamp', effective_dt
+        ) AS vitals_obj
+      FROM vitals
+      QUALIFY ROW_NUMBER() OVER(PARTITION BY patient_id ORDER BY effective_dt DESC NULLS LAST) = 1
+    ) v ON v.patient_id = p.patient_id
+    LEFT JOIN (
+      SELECT patient_id, ARRAY_AGG(OBJECT_CONSTRUCT(
+        'name', lab_name, 'value', value, 'unit', unit, 'flag', flag
+      )) AS labs_arr
+      FROM (
+        SELECT patient_id, lab_name, value, unit, flag, effective_dt
+        FROM lab_results
+        QUALIFY ROW_NUMBER() OVER(PARTITION BY patient_id ORDER BY effective_dt DESC) <= 5
+      )
+      GROUP BY patient_id
+    ) l ON l.patient_id = p.patient_id
+    LEFT JOIN (
+      SELECT patient_id, ARRAY_AGG(medication) AS meds_arr
+      FROM medications
+      GROUP BY patient_id
+    ) m ON m.patient_id = p.patient_id
+    LEFT JOIN (
+      SELECT patient_id, ARRAY_AGG(allergen) AS allergies_arr
+      FROM allergies
+      GROUP BY patient_id
+    ) a ON a.patient_id = p.patient_id
+    LEFT JOIN (
+      SELECT patient_id, ARRAY_AGG(note_text) AS notes_arr
+      FROM nursing_notes
+      GROUP BY patient_id
+    ) n ON n.patient_id = p.patient_id
+    ORDER BY p.risk_score DESC NULLS LAST
+  `;
+
+  const rows = await executeSql(sql);
+
+  return rows.map(r => ({
+    id: r.PATIENT_ID,
+    name: r.NAME,
+    age: r.AGE,
+    sex: r.SEX,
+    room: r.ROOM,
+    mrn: r.MRN,
+    diagnosis: r.DIAGNOSIS,
+    summary: r.SUMMARY,
+    riskScore: r.RISK_SCORE ?? 0,
+    vitals: r.VITALS ? (typeof r.VITALS === 'string' ? JSON.parse(r.VITALS) : r.VITALS) : { hr: 0, bpSys: 0, bpDia: 0, rr: 0, temp: 0, spo2: 0, timestamp: new Date().toISOString() },
+    labs: r.LABS ? (typeof r.LABS === 'string' ? JSON.parse(r.LABS) : r.LABS) : [],
+    meds: r.MEDS ? (typeof r.MEDS === 'string' ? JSON.parse(r.MEDS) : r.MEDS) : [],
+    allergies: r.ALLERGIES ? (typeof r.ALLERGIES === 'string' ? JSON.parse(r.ALLERGIES) : r.ALLERGIES) : [],
+    notes: r.NOTES ? (typeof r.NOTES === 'string' ? JSON.parse(r.NOTES) : r.NOTES) : []
+  }));
+}
+
+/**
  * Check if Snowflake is configured and connectable.
  */
 export async function isSnowflakeAvailable(): Promise<boolean> {

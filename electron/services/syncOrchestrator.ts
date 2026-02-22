@@ -15,6 +15,7 @@ import {
   upsertPatientSnapshot,
   callNurseQuery,
   isSnowflakeAvailable,
+  isPatientSyncedRecent,
   type NurseQueryResult,
 } from "./snowflakeClient";
 
@@ -30,19 +31,38 @@ export interface SyncResult {
 
 /**
  * Sync a patient: fetch FHIR → transform → upsert to Snowflake.
+ * includes a staleness check to skip redundant fetches.
  */
 export async function syncPatient(patientId: string): Promise<SyncResult> {
   const startTime = Date.now();
+
+  // 1. Check Snowflake availability and staleness
+  const sfAvailable = await isSnowflakeAvailable();
+  if (sfAvailable) {
+    const isRecent = await isPatientSyncedRecent(patientId);
+    if (isRecent) {
+      console.log(`[Sync] Patient ${patientId} synced recently (<10min). Skipping FHIR fetch.`);
+      return {
+        success: true,
+        patientId,
+        snapshotId: "cached",
+        rowsWritten: 0,
+        completenessFlags: {}, // We could fetch these if needed, but for prompt speed we skip
+        syncDurationMs: Date.now() - startTime,
+      };
+    }
+  }
+
   console.log(`[Sync] Starting sync for patient ${patientId}`);
 
   try {
-    // 1. Fetch FHIR Bundle
+    // 2. Fetch FHIR Bundle
     const bundle = await fetchPatientBundle(patientId);
     console.log(
       `[Sync] Fetched ${bundle.entry.length} resources in ${Date.now() - startTime}ms`
     );
 
-    // 2. Transform to flat rows
+    // 3. Transform to flat rows
     const lookbackHours = Number(process.env.SYNC_LOOKBACK_HOURS ?? 72);
     const snapshot = transformBundle(patientId, bundle, lookbackHours);
     console.log(
@@ -51,8 +71,6 @@ export async function syncPatient(patientId: string): Promise<SyncResult> {
         `${snapshot.vitals.length} vitals, ${snapshot.notes.length} notes`
     );
 
-    // 3. Check Snowflake availability
-    const sfAvailable = await isSnowflakeAvailable();
     if (!sfAvailable) {
       console.warn("[Sync] Snowflake not available — returning local snapshot only");
       return {
@@ -99,6 +117,47 @@ export async function syncPatient(patientId: string): Promise<SyncResult> {
       error: errorMsg,
     };
   }
+}
+
+let isPreseeding = false;
+
+/**
+ * Background pre-seeding: sync a list of patients sequentially.
+ * Includes a lock to prevent concurrent overlapping runs.
+ */
+export async function preseedCohort(patientIds: string[]): Promise<{
+  total: number;
+  synced: number;
+  errors: number;
+}> {
+  if (isPreseeding) {
+    console.log(`[Sync] Pre-seed already running. Ignoring duplicate trigger for ${patientIds.length} patients.`);
+    return { total: patientIds.length, synced: 0, errors: 0 };
+  }
+
+  isPreseeding = true;
+  console.log(`[Sync] Pre-seeding cohort of ${patientIds.length} patients...`);
+
+  let synced = 0;
+  let errors = 0;
+
+  try {
+    for (const id of patientIds) {
+      try {
+        const result = await syncPatient(id);
+        if (result.success) synced++;
+        else errors++;
+      } catch (err) {
+        console.error(`[Sync] Pre-seed failed for ${id}:`, err);
+        errors++;
+      }
+    }
+  } finally {
+    isPreseeding = false;
+  }
+
+  console.log(`[Sync] Pre-seed complete: ${synced} synced, ${errors} errors`);
+  return { total: patientIds.length, synced, errors };
 }
 
 /**

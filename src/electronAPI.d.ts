@@ -15,6 +15,11 @@ export interface ElectronAPI {
       patients?: any[];
       error?: string;
     }>;
+    getCensus: () => Promise<{
+      success: boolean;
+      census?: any[];
+      error?: string;
+    }>;
     clearCache: () => Promise<{ success: boolean }>;
   };
   snowflake: {
@@ -42,6 +47,13 @@ export interface ElectronAPI {
     getCohortSummary: () => Promise<{
       success: boolean;
       summary?: any;
+      error?: string;
+    }>;
+    preseedCohort: (patientIds: string[]) => Promise<{
+      success: boolean;
+      total: number;
+      synced: number;
+      errors: number;
       error?: string;
     }>;
     getStatus: () => Promise<{
