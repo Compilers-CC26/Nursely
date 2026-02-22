@@ -200,7 +200,6 @@ export async function preseedCohort(patientIds: string[]): Promise<{
 
 /**
  * Ask a question about a patient through the Snowflake RAG pipeline.
- * Falls back to local mock if Snowflake is unavailable.
  */
 export async function askQuestion(
   patientId: string,
@@ -210,17 +209,11 @@ export async function askQuestion(
   const sfAvailable = await isSnowflakeAvailable();
 
   if (!sfAvailable) {
-    console.warn(
-      "[Sync] Snowflake not available — question will use mock service",
-    );
     throw new Error("SNOWFLAKE_UNAVAILABLE");
   }
 
   return callNurseQuery(patientId, question, encounterId);
 }
-
-/** Set to false after first 'Unknown function' error so we stop hitting Snowflake for cohort queries */
-let cohortProcAvailable = true;
 
 /**
  * Ask a global/cohort question through the Snowflake analytics pipeline.
@@ -230,7 +223,7 @@ export async function askGlobalQuestion(
 ): Promise<NurseQueryResult> {
   const sfAvailable = await isSnowflakeAvailable();
 
-  if (!sfAvailable || !cohortProcAvailable) {
+  if (!sfAvailable) {
     throw new Error("SNOWFLAKE_UNAVAILABLE");
   }
 
@@ -239,14 +232,15 @@ export async function askGlobalQuestion(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("Unknown function") || msg.includes("does not exist")) {
-      cohortProcAvailable = false;
       console.warn(
         "[Sync] PROCESS_COHORT_QUERY stored procedure not found in Snowflake. " +
-          "All cohort questions will use the local mock for this session. " +
           "Run snowflake/setup_all.sql to enable full RAG cohort queries.",
       );
+      throw new Error(
+        "COHORT_PROC_NOT_FOUND: Run snowflake/setup_all.sql to enable AI cohort queries",
+      );
     }
-    throw new Error("SNOWFLAKE_UNAVAILABLE");
+    throw err;
   }
 }
 

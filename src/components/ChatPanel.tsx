@@ -127,13 +127,12 @@ export default function ChatPanel({
         if (response.filterCommand) {
           onApplyFilter?.(response.filterCommand);
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("Chat error:", err);
         const errorMsg: ChatMessage = {
           id: `error-${Date.now()}`,
           role: "assistant",
-          content:
-            "Sorry, I encountered an error connecting to the analytics service. Please try again.",
+          content: `Error: ${err?.message ?? String(err)}`,
           timestamp: new Date(),
         };
         setMessages((prev) => [...prev, errorMsg]);
