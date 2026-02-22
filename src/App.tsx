@@ -19,6 +19,7 @@ import {
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "motion/react";
 import { LoadingAnimation } from "@/components/LoadingAnimation";
+import { OnboardingFlow } from "@/components/onboarding/OnboardingFlow";
 import { Sparkles, Search, Activity, RefreshCw } from "lucide-react";
 import nurselyLogo from "../assets/images/Nursely_Logo.svg";
 
@@ -98,6 +99,7 @@ export default function App() {
   const [activeFilter, setActiveFilter] = useState<FilterCommand | null>(null);
   const [rightTab, setRightTab] = useState<RightPanelTab>("analyst");
   const [showSplash, setShowSplash] = useState(true);
+  const [showOnboarding, setShowOnboarding] = useState(true);
   const [pendingChatMessage, setPendingChatMessage] = useState<string | null>(
     null,
   );
@@ -386,6 +388,10 @@ export default function App() {
     [selectedPatient?.id, detailPatient?.id],
   );
 
+  const handleOnboardingComplete = useCallback(() => {
+    setShowOnboarding(false);
+  }, []);
+
   return (
     <AnimatePresence mode="wait">
       {showSplash ? (
@@ -395,6 +401,16 @@ export default function App() {
           transition={{ duration: 0.4 }}
         >
           <LoadingAnimation onComplete={() => setShowSplash(false)} />
+        </motion.div>
+      ) : showOnboarding ? (
+        <motion.div
+          key="onboarding"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.5, ease: "easeOut" }}
+        >
+          <OnboardingFlow onComplete={handleOnboardingComplete} />
         </motion.div>
       ) : (
         <motion.div
@@ -493,7 +509,6 @@ export default function App() {
                     onSort={handleSort}
                   />
                 </div>
-
                 {/* Layer 2 — Patient detail card */}
                 <div
                   className={cn(
@@ -562,6 +577,7 @@ export default function App() {
                       onSearchUpdate={handleSearchFromChat}
                       activeFilter={activeFilter}
                       onApplyFilter={handleApplyFilter}
+                      onSelectPatient={handleSelectPatient}
                     />
                   )}
                 </div>
