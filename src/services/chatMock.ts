@@ -393,33 +393,118 @@ function detectNamedPatient(
  * Build a compact roster of all census patients to prepend to cohort queries.
  * Gives the LLM individual patient context for population-level questions.
  */
+// Known antibiotic keywords (lowercase substring match)
+const ANTIBIOTIC_KEYWORDS = [
+  "vancomycin",
+  "ceftriaxone",
+  "cefazolin",
+  "cefepime",
+  "meropenem",
+  "piperacillin",
+  "tazobactam",
+  "ciprofloxacin",
+  "levofloxacin",
+  "azithromycin",
+  "amoxicillin",
+  "ampicillin",
+  "doxycycline",
+  "clindamycin",
+  "metronidazole",
+  "trimethoprim",
+  "sulfamethoxazole",
+  "nitrofurantoin",
+  "linezolid",
+];
+
+// Meds associated with elevated fall risk
+const FALL_RISK_MED_KEYWORDS = [
+  // Opioids
+  "morphine",
+  "oxycodone",
+  "hydrocodone",
+  "fentanyl",
+  "codeine",
+  "tramadol",
+  "hydromorphone",
+  // Benzodiazepines / sedatives / hypnotics
+  "lorazepam",
+  "diazepam",
+  "midazolam",
+  "alprazolam",
+  "clonazepam",
+  "zolpidem",
+  "temazepam",
+  "haloperidol",
+  "quetiapine",
+  "olanzapine",
+  // Antihypertensives / diuretics causing orthostatic hypotension
+  "furosemide",
+  "lisinopril",
+  "amlodipine",
+  "metoprolol",
+  "carvedilol",
+  "hydralazine",
+  "prazosin",
+  "doxazosin",
+  "tizanidine",
+];
+
 function buildCensusRoster(census: Patient[]): string {
   const lines = census
     .map((p) => {
       const dx = getEffectiveDiagnosis(p) ?? "No active dx";
+      const allMeds = p.meds.map((m) => m.toLowerCase());
+
+      // Clinical category flags
       const flags: string[] = [];
       if (p.riskScore > 0.65) flags.push("HIGH RISK");
       if (p.labs.some((l) => l.flag === "critical"))
         flags.push("CRITICAL LABS");
-      if (p.vitals.hr !== null && (p.vitals.hr > 120 || p.vitals.hr < 50))
-        flags.push("HR ALERT");
-      if (p.vitals.bpSys !== null && p.vitals.bpSys < 90) flags.push("LOW BP");
-      if (p.vitals.spo2 !== null && p.vitals.spo2 < 90) flags.push("LOW SPO2");
-      const medsSnip =
-        p.meds.length > 0
-          ? p.meds.slice(0, 3).join(", ") +
-            (p.meds.length > 3 ? ` +${p.meds.length - 3} more` : "")
-          : "none";
+      if (p.labs.some((l) => l.flag === "high" || l.flag === "low"))
+        flags.push("ABNORMAL LABS");
+
+      // Vitals — critical level
+      const v = p.vitals;
+      if (v.hr !== null && (v.hr > 120 || v.hr < 50)) flags.push("HR CRITICAL");
+      else if (v.hr !== null && (v.hr > 100 || v.hr < 60))
+        flags.push("HR ABNORMAL");
+      if (v.bpSys !== null && v.bpSys < 80) flags.push("BP CRITICAL");
+      else if (v.bpSys !== null && (v.bpSys < 90 || v.bpSys > 160))
+        flags.push("BP ABNORMAL");
+      if (v.spo2 !== null && v.spo2 < 90) flags.push("SPO2 CRITICAL");
+      else if (v.spo2 !== null && v.spo2 < 94) flags.push("SPO2 LOW");
+      if (v.rr !== null && (v.rr > 28 || v.rr < 10)) flags.push("RR CRITICAL");
+      else if (v.rr !== null && (v.rr > 20 || v.rr < 12))
+        flags.push("RR ABNORMAL");
+      if (v.temp !== null && (v.temp > 103 || v.temp < 96))
+        flags.push("TEMP CRITICAL");
+      else if (v.temp !== null && v.temp > 100.4) flags.push("FEVER");
+
+      // Medication category flags
+      const onAntibiotics = allMeds.some((m) =>
+        ANTIBIOTIC_KEYWORDS.some((kw) => m.includes(kw)),
+      );
+      if (onAntibiotics) {
+        const abx = p.meds.filter((m) =>
+          ANTIBIOTIC_KEYWORDS.some((kw) => m.toLowerCase().includes(kw)),
+        );
+        flags.push(`ANTIBIOTICS: ${abx.join(", ")}`);
+      }
+      const fallRiskMeds = p.meds.filter((m) =>
+        FALL_RISK_MED_KEYWORDS.some((kw) => m.toLowerCase().includes(kw)),
+      );
+      if (fallRiskMeds.length > 0)
+        flags.push(`FALL-RISK MEDS: ${fallRiskMeds.join(", ")}`);
+
       return (
-        `- ${p.name} | Rm ${p.room} | Dx: ${dx} | Risk: ${p.riskScore.toFixed(2)}` +
-        ` | Meds: ${medsSnip}` +
-        (flags.length ? ` | ALERTS: ${flags.join(", ")}` : "")
+        `- ${p.name} | Age ${p.age} | Rm ${p.room} | Dx: ${dx} | Risk: ${p.riskScore.toFixed(2)}` +
+        (flags.length ? ` | FLAGS: ${flags.join("; ")}` : " | FLAGS: none")
       );
     })
     .join("\n");
   return (
     `[LIVE UNIT CENSUS — ${census.length} patients. ` +
-    `Use this roster as the authoritative source for all patient names, rooms, diagnoses, and alerts.]\n` +
+    `Use this roster as the authoritative source for all patient names, rooms, ages, diagnoses, medications, and clinical flags.]\n` +
     lines
   );
 }

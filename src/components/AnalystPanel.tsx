@@ -450,10 +450,14 @@ export default function AnalystPanel({
   const lowPct = 100 - highPct - modPct;
 
   const unitQuestions = [
-    "Which patients have abnormal vitals since last rounding?",
-    "Who is at highest fall risk right now?",
-    "Which patients are on antibiotics and for how long?",
-    "Are there any patients due for pain reassessment?",
+    // Asks what the data can actually answer — current vitals in roster
+    "Which patients currently have abnormal vitals that need attention?",
+    // Embeds fall-risk criteria so LLM can reason from age + dx + meds in roster
+    "Which patients are at highest fall risk based on age, diagnosis, and fall-risk medications like opioids, sedatives, or blood pressure drugs?",
+    // Roster now includes ANTIBIOTICS flag with specific drug names
+    "Which patients are currently on antibiotics, and what are they taking?",
+    // Answerable from FALL-RISK MEDS flag + opioid names in meds
+    "Which patients are on opioid or sedating medications that may require a pain reassessment per protocol?",
   ];
 
   return (

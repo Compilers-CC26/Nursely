@@ -96,7 +96,19 @@ function mapSnapshotToUIModel(snapshot: any): Patient | null {
     flag: l.flag as "normal" | "high" | "low" | "critical",
   }));
 
-  const meds = snapshot.medications.map((m: any) => m.medication);
+  // Deduplicate medications by name — Synthea emits one MedicationRequest per
+  // prescription event, so a patient on a chronic med for years accumulates
+  // dozens of identical entries (e.g. "Simvastatin 10 MG" × 90).
+  const seenMeds = new Set<string>();
+  const meds: string[] = [];
+  for (const m of snapshot.medications) {
+    const name = (m.medication as string) ?? "";
+    const key = name.trim().toLowerCase();
+    if (key && !seenMeds.has(key)) {
+      seenMeds.add(key);
+      meds.push(name);
+    }
+  }
   const allergies = snapshot.allergies.map((a: any) => a.allergen);
   const notes = snapshot.notes.map((n: any) => n.note_text);
 
