@@ -92,9 +92,7 @@ export default function App() {
   const [queryColCount, setQueryColCount] = useState(0);
   const [rightTab, setRightTab] = useState<RightPanelTab>("analyst");
   const [showSplash, setShowSplash] = useState(true);
-  const [showOnboarding, setShowOnboarding] = useState(() => {
-    return !localStorage.getItem("nursely-onboarding-complete");
-  });
+  const [showOnboarding, setShowOnboarding] = useState(true);
   const [pendingChatMessage, setPendingChatMessage] = useState<string | null>(
     null,
   );
@@ -309,7 +307,6 @@ export default function App() {
   );
 
   const handleOnboardingComplete = useCallback(() => {
-    localStorage.setItem("nursely-onboarding-complete", "true");
     setShowOnboarding(false);
   }, []);
 
